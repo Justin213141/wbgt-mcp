@@ -1,5 +1,50 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
+// --- Type Definitions ---
+interface SRData {
+  hourly?: {
+    time?: string[];
+    shortwave_radiation?: number[];
+    cloud_cover?: number[];
+    uv_index?: number[];
+  };
+}
+
+interface BOMData {
+  observations?: {
+    data?: any[];
+  };
+  data?: any[];
+}
+
+interface WeatherData {
+  hourly?: {
+    time?: string[];
+    temperature_2m?: number[];
+    relative_humidity_2m?: number[];
+    dew_point_2m?: number[];
+    wind_speed_10m?: number[];
+    shortwave_radiation_instant?: number[];
+  };
+}
+
+interface AQData {
+  hourly?: {
+    time?: string[];
+    us_aqi?: number[];
+    pm2_5?: number[];
+    pm10?: number[];
+  };
+}
+
+interface ObservationsResponse {
+  type: 'recent' | 'historical' | 'merged';
+  weatherData?: WeatherData;
+  srData?: SRData;
+  bomData?: BOMData;
+}
 
 // Sydney coordinates
 const SYDNEY_LAT = -33.8018;
@@ -64,7 +109,7 @@ function parseBOMTime(bomTime: string): string {
 }
 
 // --- Fetch functions ---
-async function fetchObservations(startDate?: string, endDate?: string) {
+async function fetchObservations(startDate?: string, endDate?: string): Promise<ObservationsResponse> {
   const now = new Date();
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
@@ -86,8 +131,8 @@ async function fetchObservations(startDate?: string, endDate?: string) {
     ]);
     return {
       type: 'recent',
-      srData: await srResponse.json(),
-      bomData: await bomResponse.json()
+      srData: await srResponse.json() as SRData,
+      bomData: await bomResponse.json() as BOMData
     };
   }
 
@@ -98,7 +143,7 @@ async function fetchObservations(startDate?: string, endDate?: string) {
 
     return {
       type: 'historical',
-      weatherData: await weatherResponse.json()
+      weatherData: await weatherResponse.json() as WeatherData
     };
   }
 
@@ -116,44 +161,44 @@ async function fetchObservations(startDate?: string, endDate?: string) {
 
   return {
     type: 'merged',
-    weatherData: await weatherResponse.json(),
-    srData: await srResponse.json(),
-    bomData: await bomResponse.json()
+    weatherData: await weatherResponse.json() as WeatherData,
+    srData: await srResponse.json() as SRData,
+    bomData: await bomResponse.json() as BOMData
   };
 }
 
-async function fetchForecast() {
+async function fetchForecast(): Promise<{ srData: SRData; aqData: AQData; bomData: BOMData }> {
   // TODO: Re-enable caching after debugging
   return await (async () => {
       const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=cloud_cover,shortwave_radiation,uv_index&timezone=UTC&forecast_days=3`;
       const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=us_aqi,pm10,pm2_5&timezone=UTC&forecast_days=3`;
       const bomUrl = `https://api.weather.bom.gov.au/v1/locations/${BOM_LOCATION_ID}/forecasts/hourly`;
-      
+
       console.log('[FETCH] Starting forecast fetch...');
       const [srResponse, aqResponse, bomResponse] = await Promise.all([
         fetch(srUrl),
         fetch(aqUrl),
         fetch(bomUrl)
       ]);
-      
+
       console.log('[FETCH] SR response status:', srResponse.status);
       console.log('[FETCH] AQ response status:', aqResponse.status);
       console.log('[FETCH] BOM response status:', bomResponse.status);
-      
-      const srData = await srResponse.json();
-      const aqData = await aqResponse.json();
-      const bomData = await bomResponse.json();
-      
+
+      const srData = await srResponse.json() as SRData;
+      const aqData = await aqResponse.json() as AQData;
+      const bomData = await bomResponse.json() as BOMData;
+
       console.log('[FETCH] srData.hourly exists?', !!srData?.hourly);
       console.log('[FETCH] srData.hourly.time length:', srData?.hourly?.time?.length || 0);
       console.log('[FETCH] srData.hourly.time (first 3):', srData?.hourly?.time?.slice(0, 3));
       console.log('[FETCH] srData.hourly.shortwave_radiation (first 3):', srData?.hourly?.shortwave_radiation?.slice(0, 3));
       console.log('[FETCH] BOM data.length:', bomData?.data?.length || 0);
-      
+
       if (srResponse.status !== 200) {
         console.log('[FETCH] SR ERROR:', JSON.stringify(srData).substring(0, 200));
       }
-      
+
       return {
         srData,
         aqData,
@@ -485,7 +530,7 @@ function lookupSolarRadiation(bomTimestamp: string, srMap: Map<string, number>, 
   }
 }
 
-function parseObservations(data: any, startTime?: string, endTime?: string) {
+function parseObservations(data: ObservationsResponse, startTime?: string, endTime?: string): any[] {
   const results: any[] = [];
   
   if (data.type === 'recent') {
@@ -673,8 +718,8 @@ function parseObservations(data: any, startTime?: string, endTime?: string) {
   return results;
 }
 
-function parseForecastData(srData: any, aqData: any, bomData: any) {
-  const results = [];
+function parseForecastData(srData: SRData, aqData: AQData, bomData: BOMData): any[] {
+  const results: any[] = [];
   const forecasts = bomData?.data || [];
   const srTimes = srData?.hourly?.time || [];
   const srClouds = srData?.hourly?.cloud_cover || [];
@@ -795,7 +840,7 @@ export class WBGTServerMCP extends McpAgent {
     // Tool 1: Get current WBGT
     this.server.tool(
       "get_current_wbgt",
-      {},
+      "Get current WBGT (Wet Bulb Globe Temperature) conditions in Sydney",
       async () => {
         const data = await fetchObservations();
         const observations = parseObservations(data);
@@ -815,7 +860,7 @@ export class WBGTServerMCP extends McpAgent {
     // Tool 2: Get WBGT forecast
     this.server.tool(
       "get_wbgt_forecast",
-      {},
+      "Get 72-hour WBGT forecast for Sydney including solar radiation, cloud cover, UV index, and air quality",
       async () => {
         const { srData, aqData, bomData } = await fetchForecast();
         const forecast = parseForecastData(srData, aqData, bomData);
@@ -834,37 +879,36 @@ export class WBGTServerMCP extends McpAgent {
     );
 
     // Tool 3: Get WBGT observations (unified recent/historical)
+    const observationsSchema: Record<string, any> = {
+      start_date: z.string()
+        .optional()
+        .describe("Optional start date in YYYY-MM-DD format or ISO datetime. Omit for recent 24-hour data"),
+      end_date: z.string()
+        .optional()
+        .describe("Optional end date in YYYY-MM-DD format or ISO datetime. Omit for recent 24-hour data"),
+      start_time: z.string()
+        .optional()
+        .describe("Optional start time in ISO format for activity-specific WBGT maximum"),
+      end_time: z.string()
+        .optional()
+        .describe("Optional end time in ISO format. When both start_time and end_time provided, returns max WBGT values during the activity window"),
+    };
+
     this.server.tool(
       "get_wbgt_observations",
-      {
-        start_date: {
-          type: "string",
-          description: "Optional start date (YYYY-MM-DD) or datetime (ISO format). Omit for recent 24h",
-        },
-        end_date: {
-          type: "string",
-          description: "Optional end date (YYYY-MM-DD) or datetime (ISO format). Omit for recent 24h",
-        },
-        start_time: {
-          type: "string",
-          description: "Optional start time for specific activity (ISO format)",
-        },
-        end_time: {
-          type: "string",
-          description: "Optional end time for specific activity (ISO format). Returns max values in range.",
-        },
-      },
+      "Get WBGT observations for Sydney - retrieves recent data (last 24h) or historical observations for specified date ranges. Can also calculate maximum WBGT during a specific activity time window",
+      observationsSchema,
       async (params: any) => {
         const { start_date, end_date, start_time, end_time } = params;
         const data = await fetchObservations(start_date, end_date);
         const observations = parseObservations(data, start_time, end_time);
-        
-        const note = start_time 
+
+        const note = start_time
           ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
-          : start_date 
+          : start_date
           ? `WBGT observations from ${start_date} to ${end_date || 'present'}`
           : "Recent 24-hour WBGT observations";
-        
+
         return {
           content: [{
             type: "text",
@@ -1026,7 +1070,7 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
 
 // --- HTTP Handler ---
 const sseAgent = WBGTServerMCP.serveSSE("/sse");
-const standardAgent = WBGTServerMCP.serve("/mcp");
+const standardAgent = WBGTServerMCP.serveSSE("/mcp");
 
 // Initialize tools when servers are created
 (async () => {
@@ -1041,7 +1085,7 @@ export default {
     if (url.pathname === "/sse" || url.pathname === "/sse/message") {
       return sseAgent.fetch(request, env, ctx);
     }
-    if (url.pathname === "/mcp") {
+    if (url.pathname === "/mcp" || url.pathname === "/mcp/message") {
       return standardAgent.fetch(request, env, ctx);
     }
 
