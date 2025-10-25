@@ -388,23 +388,31 @@ export function calculateRadiationComponents(
 
   // Shortwave on globe (0.5 sphere, receiving from sky and ground)
   const cosTheta = Math.cos(theta_rad);
-  const denom = Math.max(0.1, cosTheta); // Avoid division by zero at horizon
+
+  // Direct component: account for sun angle on sphere surface
+  // When sun is above horizon (theta < 90°), use cosTheta
+  // When sun is below horizon (theta >= 90°), direct is zero (already handled by isSunAboveHorizon check)
+  const directComponent = cosTheta > 0 ? (fdir * SRdown * cosTheta / Math.PI) : 0;
 
   const SRg = 0.5 * (1 - GLOBE_ALBEDO) * [
-    (1 - fdir) * SRdown,
-    fdir * SRdown / (2 * denom),
-    SRup
+    (1 - fdir) * SRdown * 0.5,  // Diffuse: 0.5 hemisphere factor
+    directComponent,
+    SRup * 0.5  // Reflected: 0.5 hemisphere factor
   ].reduce((a, b) => a + b, 0);
 
   // Longwave on globe
   const LRg = 0.5 * GLOBE_EMISSIVITY * (LRdown + LRup);
 
   // Shortwave on wick (0.5 cylinder with specified albedo and geometry)
-  const tanTheta = Math.tan(theta_rad);
+  // For a cylinder oriented horizontally, direct beam depends on zenith angle
+  const sinTheta = Math.sin(theta_rad);
+  // Direct component for cylinder: beam intensity * sin(theta) accounts for projected area
+  const directComponentWick = sinTheta > 0 ? (fdir * SRdown * sinTheta) : 0;
+
   const SRw = (1 - WICK_ALBEDO) * [
-    (1 + 0.007 / (4 * WICK_LENGTH)) * (1 - fdir) * SRdown,
-    (tanTheta / Math.PI + 0.007 / (4 * WICK_LENGTH)) * fdir * SRdown,
-    SRup
+    (1 - fdir) * SRdown * 0.5,  // Diffuse: 0.5 cylinder factor
+    directComponentWick,
+    SRup * 0.5  // Reflected: 0.5 cylinder factor
   ].reduce((a, b) => a + b, 0);
 
   // Longwave on wick
