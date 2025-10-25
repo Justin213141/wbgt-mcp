@@ -1441,46 +1441,111 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
     // BOM observations - field names: air_temp, rel_hum, dewpt, wind_spd_kmh
     const bom = data.bomData?.observations?.data || [];
 
-    // Build solar radiation lookup map from Open-Meteo data (hourly intervals)
+    // Build maps from Open-Meteo data (hourly intervals) for Kong WBGT
     const srTimes = data.srData?.hourly?.time || [];
-    const srValues = data.srData?.hourly?.shortwave_radiation || [];
+    const omTemps = data.srData?.hourly?.temperature_2m || [];
+    const omHumidity = data.srData?.hourly?.relative_humidity_2m || [];
+    const omDewpoints = data.srData?.hourly?.dew_point_2m || [];
+    const omWetBulbs = data.srData?.hourly?.wet_bulb_temperature_2m || [];
+    const omPressures = data.srData?.hourly?.surface_pressure || [];
+    const omWindSpeeds = data.srData?.hourly?.wind_speed_10m || [];
+    const omSRInstant = data.srData?.hourly?.shortwave_radiation_instant || [];
+    const omSRDirect = data.srData?.hourly?.direct_radiation_instant || [];
+    const omSRDiffuse = data.srData?.hourly?.diffuse_radiation_instant || [];
+    const omApparentTemps = data.srData?.hourly?.apparent_temperature || [];
+    const srClouds = data.srData?.hourly?.cloud_cover || [];
+    const srUV = data.srData?.hourly?.uv_index || [];
 
     console.log('[DEBUG] srData structure:', Object.keys(data.srData || {}));
     console.log('[DEBUG] srTimes.length:', srTimes.length);
     console.log('[DEBUG] srTimes (first 3):', srTimes.slice(0, 3));
-    console.log('[DEBUG] srValues (first 3):', srValues.slice(0, 3));
     console.log('[DEBUG] BOM observations count:', bom.length);
     console.log('[DEBUG] BOM timestamps (first 3):', bom.slice(0, 3).map((o: any) => o.local_date_time));
 
-    const srMap = new Map<string, number>();
+    // Build maps: key = "2025-10-19T14" for Open-Meteo data
+    const omMap: Record<string, { idx: number; omData: any }> = {};
+    const cloudMap: Record<string, number> = {};
+    const uvMap: Record<string, number> = {};
+
     srTimes.forEach((time: string, idx: number) => {
-      srMap.set(time, srValues[idx] || 0);
+      const hourKey = time.substring(0, 13);
+      omMap[hourKey] = {
+        idx,
+        omData: {
+          temp: omTemps[idx],
+          humidity: omHumidity[idx],
+          dewpoint: omDewpoints[idx],
+          wet_bulb: omWetBulbs[idx],
+          pressure: omPressures[idx],
+          wind_speed: omWindSpeeds[idx],
+          sr_instant: omSRInstant[idx],
+          sr_direct: omSRDirect[idx],
+          sr_diffuse: omSRDiffuse[idx],
+          apparent_temp: omApparentTemps[idx]
+        }
+      };
+      cloudMap[hourKey] = srClouds[idx];
+      uvMap[hourKey] = srUV[idx];
     });
 
-    console.log('[DEBUG] srMap size:', srMap.size);
+    console.log('[DEBUG] omMap built with', Object.keys(omMap).length, 'keys');
 
     bom.forEach((obs: any, idx: number) => {
+      const timestamp = normalizeBOMTimestamp(obs.local_date_time);
+      const bomTime = new Date(timestamp);
+      const hourKey = `${bomTime.getUTCFullYear()}-${String(bomTime.getUTCMonth() + 1).padStart(2, '0')}-${String(bomTime.getUTCDate()).padStart(2, '0')}T${String(bomTime.getUTCHours()).padStart(2, '0')}`;
+
+      // Try to get Open-Meteo data for Kong WBGT
+      const omEntry = omMap[hourKey];
+      const omData = omEntry?.omData || {};
+
       const ta = obs.air_temp;
       const rh = obs.rel_hum;
       const dewpt = obs.dewpt;
       const ws_kmh = obs.wind_spd_kmh || 0;
       const ws_ms = ws_kmh / 3.6;
-      const sr = lookupSolarRadiation(obs.local_date_time, srMap, idx === 0);
 
+      // Calculate Kong WBGT using Open-Meteo data where available
+      let wbgt = null;
       const e = calculateVaporPressure(ta, rh);
-      const wbgt = calculateWBGT(ta, rh, sr);
       const ewbgt = calculateEWBGT(ta, e);
-      const at = calculateAT(ta, rh, ws_kmh, sr);
+      const at = calculateAT(ta, rh, ws_kmh, omData.sr_instant || 0);
+
+      if (omData.wet_bulb !== undefined && omData.pressure !== undefined) {
+        try {
+          const kongCalc = calculateKongWBGTPipeline(
+            ta,
+            omData.wet_bulb,
+            rh,
+            omData.pressure,
+            omData.wind_speed || ws_ms * 3.6,
+            omData.sr_instant || 0,
+            omData.sr_direct || 0,
+            omData.sr_diffuse || 0,
+            SYDNEY_LAT,
+            SYDNEY_LON,
+            timestamp
+          );
+          wbgt = kongCalc.kong_wbgt;
+        } catch (error) {
+          console.error(`[DEBUG] Error calculating Kong WBGT for ${timestamp}:`, error);
+          wbgt = calculateWBGT(ta, rh, omData.sr_instant || 0);
+        }
+      } else {
+        wbgt = calculateWBGT(ta, rh, omData.sr_instant || 0);
+      }
 
       results.push({
-        timestamp: normalizeBOMTimestamp(obs.local_date_time),
+        timestamp,
         temperature: parseFloat(ta.toFixed(1)),
         humidity: Math.round(rh),
         dew_point: parseFloat(dewpt.toFixed(1)),
         wind_speed_ms: parseFloat(ws_ms.toFixed(1)),
-        solar_radiation: Math.round(sr),
+        solar_radiation: parseFloat((omData.sr_instant || 0).toFixed(1)),
+        cloud_cover: parseFloat((cloudMap[hourKey] || 0).toFixed(1)),
+        uv_index: parseFloat((uvMap[hourKey] || 0).toFixed(1)),
         wbgt: parseFloat(wbgt.toFixed(1)),
-        ewbgt: parseFloat(ewbgt.toFixed(1)),
+        esi: parseFloat(ewbgt.toFixed(1)),
         apparent_temp: parseFloat(at.toFixed(1))
       });
     });
@@ -1492,23 +1557,54 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
     const temps = weatherData?.hourly?.temperature_2m || [];
     const humidity = weatherData?.hourly?.relative_humidity_2m || [];
     const dewpoints = weatherData?.hourly?.dew_point_2m || [];
+    const wetBulbs = weatherData?.hourly?.wet_bulb_temperature_2m || [];
+    const pressures = weatherData?.hourly?.surface_pressure || [];
     const windSpeeds = weatherData?.hourly?.wind_speed_10m || [];
-    const radiation = weatherData?.hourly?.shortwave_radiation_instant || [];
+    const srInstant = weatherData?.hourly?.shortwave_radiation_instant || [];
+    const srDirect = weatherData?.hourly?.direct_radiation_instant || [];
+    const srDiffuse = weatherData?.hourly?.diffuse_radiation_instant || [];
+    const apparentTemps = weatherData?.hourly?.apparent_temperature || [];
+    const cloudCovers = weatherData?.hourly?.cloud_cover || [];
 
     times.forEach((time: string, idx: number) => {
       const ta = temps[idx];
       const rh = humidity[idx];
       const dewpt = dewpoints[idx];
+      const tw = wetBulbs[idx];
+      const p_hpa = pressures[idx];
       const ws_ms = windSpeeds[idx];
-      const sr = radiation[idx] || 0;
-
-      const e = calculateVaporPressure(ta, rh);
-      const wbgt = calculateWBGT(ta, rh, sr);
-      const ewbgt = calculateEWBGT(ta, e);
-      const at = calculateAT(ta, rh, ws_ms * 3.6, sr);
+      const sr = srInstant[idx] || 0;
+      const sr_direct = srDirect[idx] || 0;
+      const sr_diffuse = srDiffuse[idx] || 0;
 
       // Ensure ISO format timestamp for consistent parsing
       const isoTime = time.includes('T') ? time : new Date(time).toISOString();
+
+      // Calculate Kong WBGT
+      let wbgt = null;
+      const e = calculateVaporPressure(ta, rh);
+      const ewbgt = calculateEWBGT(ta, e);
+      const at = calculateAT(ta, rh, ws_ms * 3.6, sr);
+
+      try {
+        const kongCalc = calculateKongWBGTPipeline(
+          ta,
+          tw,
+          rh,
+          p_hpa,
+          ws_ms,
+          sr,
+          sr_direct,
+          sr_diffuse,
+          SYDNEY_LAT,
+          SYDNEY_LON,
+          isoTime
+        );
+        wbgt = kongCalc.kong_wbgt;
+      } catch (error) {
+        console.error(`[DEBUG] Error calculating Kong WBGT for ${isoTime}:`, error);
+        wbgt = calculateWBGT(ta, rh, sr);
+      }
 
       results.push({
         timestamp: isoTime,
@@ -1516,24 +1612,31 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
         humidity: Math.round(rh),
         dew_point: parseFloat(dewpt.toFixed(1)),
         wind_speed_ms: parseFloat(ws_ms.toFixed(1)),
-        solar_radiation: Math.round(sr),
+        solar_radiation: parseFloat(sr.toFixed(1)),
+        cloud_cover: parseFloat((cloudCovers[idx] || 0).toFixed(1)),
         wbgt: parseFloat(wbgt.toFixed(1)),
-        ewbgt: parseFloat(ewbgt.toFixed(1)),
-        apparent_temp: parseFloat(at.toFixed(1))
+        esi: parseFloat(ewbgt.toFixed(1)),
+        apparent_temp: parseFloat((apparentTemps[idx] || 0).toFixed(1))
       });
     });
   } else if (data.type === 'merged') {
     // Merged: Historical data (older) + Recent BOM data (last 3 days)
     console.log('[DEBUG] Processing merged data');
 
-    // First, process historical data
+    // First, process historical data with Kong WBGT
     const weatherData = data.weatherData;
     const times = weatherData?.hourly?.time || [];
     const temps = weatherData?.hourly?.temperature_2m || [];
     const humidity = weatherData?.hourly?.relative_humidity_2m || [];
     const dewpoints = weatherData?.hourly?.dew_point_2m || [];
+    const wetBulbsMerge = weatherData?.hourly?.wet_bulb_temperature_2m || [];
+    const pressuresMerge = weatherData?.hourly?.surface_pressure || [];
     const windSpeeds = weatherData?.hourly?.wind_speed_10m || [];
     const radiation = weatherData?.hourly?.shortwave_radiation_instant || [];
+    const radiationDirect = weatherData?.hourly?.direct_radiation_instant || [];
+    const radiationDiffuse = weatherData?.hourly?.diffuse_radiation_instant || [];
+    const apparentTempsMerge = weatherData?.hourly?.apparent_temperature || [];
+    const cloudCoversMerge = weatherData?.hourly?.cloud_cover || [];
 
     console.log('[DEBUG] Historical data count:', times.length);
 
@@ -1541,16 +1644,40 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
       const ta = temps[idx];
       const rh = humidity[idx];
       const dewpt = dewpoints[idx];
+      const tw = wetBulbsMerge[idx];
+      const p_hpa = pressuresMerge[idx];
       const ws_ms = windSpeeds[idx];
       const sr = radiation[idx] || 0;
-
-      const e = calculateVaporPressure(ta, rh);
-      const wbgt = calculateWBGT(ta, rh, sr);
-      const ewbgt = calculateEWBGT(ta, e);
-      const at = calculateAT(ta, rh, ws_ms * 3.6, sr);
+      const sr_direct = radiationDirect[idx] || 0;
+      const sr_diffuse = radiationDiffuse[idx] || 0;
 
       // Ensure ISO format timestamp for consistent parsing
       const isoTime = time.includes('T') ? time : new Date(time).toISOString();
+
+      let wbgt = null;
+      const e = calculateVaporPressure(ta, rh);
+      const ewbgt = calculateEWBGT(ta, e);
+      const at = calculateAT(ta, rh, ws_ms * 3.6, sr);
+
+      try {
+        const kongCalc = calculateKongWBGTPipeline(
+          ta,
+          tw,
+          rh,
+          p_hpa,
+          ws_ms,
+          sr,
+          sr_direct,
+          sr_diffuse,
+          SYDNEY_LAT,
+          SYDNEY_LON,
+          isoTime
+        );
+        wbgt = kongCalc.kong_wbgt;
+      } catch (error) {
+        console.error(`[DEBUG MERGED] Error calculating Kong WBGT for ${isoTime}:`, error);
+        wbgt = calculateWBGT(ta, rh, sr);
+      }
 
       results.push({
         timestamp: isoTime,
@@ -1558,10 +1685,11 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
         humidity: Math.round(rh),
         dew_point: parseFloat(dewpt.toFixed(1)),
         wind_speed_ms: parseFloat(ws_ms.toFixed(1)),
-        solar_radiation: Math.round(sr),
+        solar_radiation: parseFloat(sr.toFixed(1)),
+        cloud_cover: parseFloat((cloudCoversMerge[idx] || 0).toFixed(1)),
         wbgt: parseFloat(wbgt.toFixed(1)),
-        ewbgt: parseFloat(ewbgt.toFixed(1)),
-        apparent_temp: parseFloat(at.toFixed(1))
+        esi: parseFloat(ewbgt.toFixed(1)),
+        apparent_temp: parseFloat((apparentTempsMerge[idx] || 0).toFixed(1))
       });
     });
 
