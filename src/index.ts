@@ -465,8 +465,10 @@ export function calculateHeatTransferCoefficients(
   // Mass transfer coefficient
   const kx = (rho * D / MOLECULAR_WEIGHT_WATER) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
 
-  // Evaporative heat transfer coefficient
-  const beta = kx * MOLECULAR_WEIGHT_WATER * LATENT_HEAT / P_Pa;
+  // Psychrometric coefficient: Le = (cp * mu) / (rho * D * MOLECULAR_WEIGHT_WATER)
+  // Evaporative heat transfer coefficient from psychrometric equation
+  const cp = 1005; // J/(kg·K) for air at standard conditions
+  const beta = (cp * mu / (rho * D * MOLECULAR_WEIGHT_WATER)) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
 
   // Vapor pressure derivative at mean wick temperature
   const Tw_mean = (Tw + Ta) / 2;
