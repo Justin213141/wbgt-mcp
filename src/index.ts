@@ -528,11 +528,12 @@ export function calculateKongNaturalWetBulb(
   // Psychrometric equation term
   const psych_term = beta * (e_sat_Ta - ea);
 
-  // Radiation term
-  const rad_term = SRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 4);
+  // Radiation balance: shortwave absorbed - longwave emitted + longwave received
+  // At night (SRw=0), this becomes: 0 - ε*σ*Tw⁴ + LRw (which includes atmospheric longwave)
+  const rad_balance = SRw + LRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Tw_K, 4);
 
-  // Numerator: radiation + longwave + psychrometric cooling
-  const numerator = rad_term + LRw - psych_term;
+  // Numerator: net radiation + psychrometric cooling
+  const numerator = rad_balance - psych_term;
 
   // Denominator: total heat transfer coefficient
   const denominator = h_ew + h_cw + h_rw;
