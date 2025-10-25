@@ -106,6 +106,7 @@ async function getCachedOrFetch(
 const STEFAN_BOLTZMANN = 5.67e-8;  // W/(m²·K⁴)
 const GAS_CONSTANT_AIR = 287.05;   // J/(kg·K)
 const MOLECULAR_WEIGHT_WATER = 0.018015;  // kg/mol
+const MOLECULAR_WEIGHT_AIR = 0.02897;  // kg/mol (dry air)
 const LATENT_HEAT = 2453000;  // J/kg
 
 // Globe constants
@@ -462,13 +463,14 @@ export function calculateHeatTransferCoefficients(
   const h_rw = 4 * STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 3);
 
   // --- Evaporative heat transfer ---
-  // Mass transfer coefficient
-  const kx = (rho * D / MOLECULAR_WEIGHT_WATER) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
-
-  // Psychrometric coefficient: Le = (cp * mu) / (rho * D * MOLECULAR_WEIGHT_WATER)
-  // Evaporative heat transfer coefficient from psychrometric equation
+  // Psychrometric coefficient (Lewis number-based)
+  // Note: M_air used as dimensionless (numerically g/mol, not kg/mol) for proper scaling
   const cp = 1005; // J/(kg·K) for air at standard conditions
-  const beta = (cp * mu / (rho * D * MOLECULAR_WEIGHT_WATER)) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
+  const M_air_dimensionless = MOLECULAR_WEIGHT_AIR * 1000; // Convert kg/mol to dimensionless g/mol value
+
+  // β = (cp * μ) / (ρ * D * M_air) without additional correlation
+  // Correlation effects already captured in h_cw
+  const beta = (cp * mu) / (rho * D * M_air_dimensionless);
 
   // Vapor pressure derivative at mean wick temperature
   const Tw_mean = (Tw + Ta) / 2;
@@ -528,11 +530,11 @@ export function calculateKongNaturalWetBulb(
   // Psychrometric equation term
   const psych_term = beta * (e_sat_Ta - ea);
 
-  // Radiation balance: shortwave absorbed - longwave emitted + longwave received
-  // At night (SRw=0), this becomes: 0 - ε*σ*Tw⁴ + LRw (which includes atmospheric longwave)
-  const rad_balance = SRw + LRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Tw_K, 4);
+  // Radiation balance per Kong zero-iteration formula (WBGT.md line 66)
+  // Uses Ta⁴ as linearization point (not Tnw⁴)
+  const rad_balance = SRw + LRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 4);
 
-  // Numerator: net radiation + psychrometric cooling
+  // Numerator: net radiation minus psychrometric cooling
   const numerator = rad_balance - psych_term;
 
   // Denominator: total heat transfer coefficient
