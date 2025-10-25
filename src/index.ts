@@ -463,14 +463,14 @@ export function calculateHeatTransferCoefficients(
   const h_rw = 4 * STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 3);
 
   // --- Evaporative heat transfer ---
-  // Psychrometric coefficient (Lewis number-based)
-  // Note: M_air used as dimensionless (numerically g/mol, not kg/mol) for proper scaling
-  const cp = 1005; // J/(kg·K) for air at standard conditions
-  const M_air_dimensionless = MOLECULAR_WEIGHT_AIR * 1000; // Convert kg/mol to dimensionless g/mol value
+  // Mass transfer coefficient (WBGT.md line 102)
+  // k̂x = (ρD/MD) × b × Re^(1-c) × Sc^(1-a)
+  // Where D (in numerator) = diffusivity, MD (in denominator) = M_air × Diameter
+  const kx = (rho * D / (MOLECULAR_WEIGHT_AIR * WICK_DIAMETER)) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
 
-  // β = (cp * μ) / (ρ * D * M_air) without additional correlation
-  // Correlation effects already captured in h_cw
-  const beta = (cp * mu) / (rho * D * M_air_dimensionless);
+  // Psychrometric coefficient (WBGT.md line 80)
+  // β̂ = k̂x × MH₂O × ΔH / P
+  const beta = kx * MOLECULAR_WEIGHT_WATER * LATENT_HEAT / P_Pa;
 
   // Vapor pressure derivative at mean wick temperature
   const Tw_mean = (Tw + Ta) / 2;
