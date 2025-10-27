@@ -1,0 +1,1836 @@
+{
+  "testModules": [
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/api/http/__tests__/phase6-api-evolution.test.ts",
+      "tests": [
+        {
+          "name": "should return success response with current data",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/current - Get Current WBGT > should return success response with current data",
+          "state": "passed"
+        },
+        {
+          "name": "should have correct CORS headers",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/current - Get Current WBGT > should have correct CORS headers",
+          "state": "passed"
+        },
+        {
+          "name": "should NOT have deprecation headers for v1 endpoint",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/current - Get Current WBGT > should NOT have deprecation headers for v1 endpoint",
+          "state": "passed"
+        },
+        {
+          "name": "should return array of forecast data with count",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/forecast - Get 72-hour Forecast > should return array of forecast data with count",
+          "state": "passed"
+        },
+        {
+          "name": "should include forecast data with required fields",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/forecast - Get 72-hour Forecast > should include forecast data with required fields",
+          "state": "passed"
+        },
+        {
+          "name": "should return observations array without time window params",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/observations - Get 72-hour Observations > should return observations array without time window params",
+          "state": "passed"
+        },
+        {
+          "name": "should support optional time window parameters",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/observations - Get 72-hour Observations > should support optional time window parameters",
+          "state": "passed"
+        },
+        {
+          "name": "should return max WBGT when time window specified",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/observations - Get 72-hour Observations > should return max WBGT when time window specified",
+          "state": "passed"
+        },
+        {
+          "name": "should require start_date and end_date parameters",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations - Historical Data > should require start_date and end_date parameters",
+          "state": "passed"
+        },
+        {
+          "name": "should accept YYYY-MM-DD date format",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations - Historical Data > should accept YYYY-MM-DD date format",
+          "state": "passed"
+        },
+        {
+          "name": "should support optional latitude and longitude",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations - Historical Data > should support optional latitude and longitude",
+          "state": "passed"
+        },
+        {
+          "name": "should default to Sydney coordinates",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations - Historical Data > should default to Sydney coordinates",
+          "state": "passed"
+        },
+        {
+          "name": "should return data array with location info",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations - Historical Data > should return data array with location info",
+          "state": "passed"
+        },
+        {
+          "name": "should require all four parameters: start_date, end_date, latitude, longitude",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations_japan - Japan Historical Data > should require all four parameters: start_date, end_date, latitude, longitude",
+          "state": "passed"
+        },
+        {
+          "name": "should include JST timezone in response",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations_japan - Japan Historical Data > should include JST timezone in response",
+          "state": "passed"
+        },
+        {
+          "name": "should use Tokyo coordinates as example",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/historic_observations_japan - Japan Historical Data > should use Tokyo coordinates as example",
+          "state": "passed"
+        },
+        {
+          "name": "should return status ok",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1/health - Health Check > should return status ok",
+          "state": "passed"
+        },
+        {
+          "name": "should return API information with version v1",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1 - API Documentation > should return API information with version v1",
+          "state": "passed"
+        },
+        {
+          "name": "should not include deprecation notice for v1",
+          "fullName": "Phase 6: API Evolution - Handler Functions > GET /api/v1 - API Documentation > should not include deprecation notice for v1",
+          "state": "passed"
+        },
+        {
+          "name": "should have consistent error structure",
+          "fullName": "Phase 6: API Evolution - Error Responses > Error Response Format > should have consistent error structure",
+          "state": "passed"
+        },
+        {
+          "name": "should include error details when provided",
+          "fullName": "Phase 6: API Evolution - Error Responses > Error Response Format > should include error details when provided",
+          "state": "passed"
+        },
+        {
+          "name": "should have standard error codes",
+          "fullName": "Phase 6: API Evolution - Error Responses > Error Response Format > should have standard error codes",
+          "state": "passed"
+        },
+        {
+          "name": "should return 400 for bad requests",
+          "fullName": "Phase 6: API Evolution - Error Responses > HTTP Status Codes > should return 400 for bad requests",
+          "state": "passed"
+        },
+        {
+          "name": "should return 404 for not found",
+          "fullName": "Phase 6: API Evolution - Error Responses > HTTP Status Codes > should return 404 for not found",
+          "state": "passed"
+        },
+        {
+          "name": "should return 500 for server errors",
+          "fullName": "Phase 6: API Evolution - Error Responses > HTTP Status Codes > should return 500 for server errors",
+          "state": "passed"
+        },
+        {
+          "name": "should return 200 for success",
+          "fullName": "Phase 6: API Evolution - Error Responses > HTTP Status Codes > should return 200 for success",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/current",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/current",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/forecast",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/forecast",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/observations",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/observations",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/historic_observations",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/historic_observations",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/historic_observations_japan",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/historic_observations_japan",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1/health",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1/health",
+          "state": "passed"
+        },
+        {
+          "name": "should support /api/v1",
+          "fullName": "Phase 6: API Evolution - API Versioning > V1 Endpoints (Recommended) > should support /api/v1",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain /api/current for backward compatibility",
+          "fullName": "Phase 6: API Evolution - API Versioning > Legacy Endpoints (Deprecated) > should maintain /api/current for backward compatibility",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain /api/forecast for backward compatibility",
+          "fullName": "Phase 6: API Evolution - API Versioning > Legacy Endpoints (Deprecated) > should maintain /api/forecast for backward compatibility",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain /api/observations for backward compatibility",
+          "fullName": "Phase 6: API Evolution - API Versioning > Legacy Endpoints (Deprecated) > should maintain /api/observations for backward compatibility",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain /api/historic_observations for backward compatibility",
+          "fullName": "Phase 6: API Evolution - API Versioning > Legacy Endpoints (Deprecated) > should maintain /api/historic_observations for backward compatibility",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain /api/historic_observations_japan for backward compatibility",
+          "fullName": "Phase 6: API Evolution - API Versioning > Legacy Endpoints (Deprecated) > should maintain /api/historic_observations_japan for backward compatibility",
+          "state": "passed"
+        },
+        {
+          "name": "should have Deprecation header set to true",
+          "fullName": "Phase 6: API Evolution - API Versioning > Deprecation Headers > should have Deprecation header set to true",
+          "state": "passed"
+        },
+        {
+          "name": "should have Sunset date header",
+          "fullName": "Phase 6: API Evolution - API Versioning > Deprecation Headers > should have Sunset date header",
+          "state": "passed"
+        },
+        {
+          "name": "should have migration warning in X-API-Warn header",
+          "fullName": "Phase 6: API Evolution - API Versioning > Deprecation Headers > should have migration warning in X-API-Warn header",
+          "state": "passed"
+        },
+        {
+          "name": "should NOT include deprecation headers for v1",
+          "fullName": "Phase 6: API Evolution - API Versioning > Deprecation Headers > should NOT include deprecation headers for v1",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Allow-Origin",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Headers > should include Access-Control-Allow-Origin",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Allow-Methods",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Headers > should include Access-Control-Allow-Methods",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Allow-Headers",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Headers > should include Access-Control-Allow-Headers",
+          "state": "passed"
+        },
+        {
+          "name": "should include Content-Type: application/json",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Headers > should include Content-Type: application/json",
+          "state": "passed"
+        },
+        {
+          "name": "should handle OPTIONS method with 204 No Content",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Preflight > should handle OPTIONS method with 204 No Content",
+          "state": "passed"
+        },
+        {
+          "name": "should return headers on OPTIONS request",
+          "fullName": "Phase 6: API Evolution - CORS & Headers > CORS Preflight > should return headers on OPTIONS request",
+          "state": "passed"
+        },
+        {
+          "name": "should indicate version v1",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api/v1 - V1 Documentation > should indicate version v1",
+          "state": "passed"
+        },
+        {
+          "name": "should list all v1 endpoints",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api/v1 - V1 Documentation > should list all v1 endpoints",
+          "state": "passed"
+        },
+        {
+          "name": "should provide migration information",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api/v1 - V1 Documentation > should provide migration information",
+          "state": "passed"
+        },
+        {
+          "name": "should indicate legacy version",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api - Legacy Documentation > should indicate legacy version",
+          "state": "passed"
+        },
+        {
+          "name": "should show deprecation notice",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api - Legacy Documentation > should show deprecation notice",
+          "state": "passed"
+        },
+        {
+          "name": "should list both v1 (recommended) and legacy endpoints",
+          "fullName": "Phase 6: API Evolution - API Root Documentation > GET /api - Legacy Documentation > should list both v1 (recommended) and legacy endpoints",
+          "state": "passed"
+        },
+        {
+          "name": "should return YAML content type",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.yaml > should return YAML content type",
+          "state": "passed"
+        },
+        {
+          "name": "should include openapi version",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.yaml > should include openapi version",
+          "state": "passed"
+        },
+        {
+          "name": "should document all endpoints",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.yaml > should document all endpoints",
+          "state": "passed"
+        },
+        {
+          "name": "should return JSON content type",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.json > should return JSON content type",
+          "state": "passed"
+        },
+        {
+          "name": "should include openapi version",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.json > should include openapi version",
+          "state": "passed"
+        },
+        {
+          "name": "should have caching headers",
+          "fullName": "Phase 6: API Evolution - OpenAPI Endpoints > GET /api/docs/openapi.json > should have caching headers",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/services/weather/__tests__/solar-radiation.service.test.ts",
+      "tests": [
+        {
+          "name": "should identify current day correctly",
+          "fullName": "SolarRadiationService > isCurrentDay > should identify current day correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should identify past day correctly",
+          "fullName": "SolarRadiationService > isCurrentDay > should identify past day correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should identify future day correctly",
+          "fullName": "SolarRadiationService > isCurrentDay > should identify future day correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should use satellite API for current day",
+          "fullName": "SolarRadiationService > fetchSolarRadiation > should use satellite API for current day",
+          "state": "passed"
+        },
+        {
+          "name": "should use archive API for historical day",
+          "fullName": "SolarRadiationService > fetchSolarRadiation > should use archive API for historical day",
+          "state": "passed"
+        },
+        {
+          "name": "should fall back to archive API if satellite data is invalid",
+          "fullName": "SolarRadiationService > fetchSolarRadiation > should fall back to archive API if satellite data is invalid",
+          "state": "passed"
+        },
+        {
+          "name": "should handle API errors gracefully",
+          "fullName": "SolarRadiationService > fetchSolarRadiation > should handle API errors gracefully",
+          "state": "passed"
+        },
+        {
+          "name": "should handle network errors gracefully",
+          "fullName": "SolarRadiationService > fetchSolarRadiation > should handle network errors gracefully",
+          "state": "passed"
+        },
+        {
+          "name": "should detect valid daytime radiation data",
+          "fullName": "SolarRadiationService > hasValidDaytimeData > should detect valid daytime radiation data",
+          "state": "passed"
+        },
+        {
+          "name": "should reject data with no daytime radiation",
+          "fullName": "SolarRadiationService > hasValidDaytimeData > should reject data with no daytime radiation",
+          "state": "passed"
+        },
+        {
+          "name": "should accept nighttime zeros as valid",
+          "fullName": "SolarRadiationService > hasValidDaytimeData > should accept nighttime zeros as valid",
+          "state": "passed"
+        },
+        {
+          "name": "should handle empty data",
+          "fullName": "SolarRadiationService > hasValidDaytimeData > should handle empty data",
+          "state": "passed"
+        },
+        {
+          "name": "should extract data for specific date",
+          "fullName": "SolarRadiationService > extractRadiationForDate > should extract data for specific date",
+          "state": "passed"
+        },
+        {
+          "name": "should return empty arrays for non-existent date",
+          "fullName": "SolarRadiationService > extractRadiationForDate > should return empty arrays for non-existent date",
+          "state": "passed"
+        },
+        {
+          "name": "should handle unsuccessful result",
+          "fullName": "SolarRadiationService > extractRadiationForDate > should handle unsuccessful result",
+          "state": "passed"
+        },
+        {
+          "name": "should construct satellite API URL correctly",
+          "fullName": "SolarRadiationService > API URL construction > should construct satellite API URL correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should construct archive API URL correctly",
+          "fullName": "SolarRadiationService > API URL construction > should construct archive API URL correctly",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/api/http/middleware/__tests__/security-headers.middleware.test.ts",
+      "tests": [
+        {
+          "name": "should add all security headers to response",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should add all security headers to response",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve existing headers",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should preserve existing headers",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve response status",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should preserve response status",
+          "state": "passed"
+        },
+        {
+          "name": "should handle different status codes",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should handle different status codes",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve response body",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should preserve response body",
+          "state": "passed"
+        },
+        {
+          "name": "should work with empty response",
+          "fullName": "Security Headers Middleware > addSecurityHeaders > should work with empty response",
+          "state": "passed"
+        },
+        {
+          "name": "should return a middleware function",
+          "fullName": "Security Headers Middleware > createSecurityHeadersMiddleware > should return a middleware function",
+          "state": "passed"
+        },
+        {
+          "name": "should apply security headers when middleware is called",
+          "fullName": "Security Headers Middleware > createSecurityHeadersMiddleware > should apply security headers when middleware is called",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve original response properties",
+          "fullName": "Security Headers Middleware > createSecurityHeadersMiddleware > should preserve original response properties",
+          "state": "passed"
+        },
+        {
+          "name": "should be chainable with other middleware",
+          "fullName": "Security Headers Middleware > createSecurityHeadersMiddleware > should be chainable with other middleware",
+          "state": "passed"
+        },
+        {
+          "name": "should enforce strict CSP policy",
+          "fullName": "Security Headers Middleware > CSP Header > should enforce strict CSP policy",
+          "state": "passed"
+        },
+        {
+          "name": "should enforce strict HTTPS with HSTS",
+          "fullName": "Security Headers Middleware > HSTS Header > should enforce strict HTTPS with HSTS",
+          "state": "passed"
+        },
+        {
+          "name": "should deny framing with X-Frame-Options DENY",
+          "fullName": "Security Headers Middleware > Frame Options > should deny framing with X-Frame-Options DENY",
+          "state": "passed"
+        },
+        {
+          "name": "should disable sensitive permissions",
+          "fullName": "Security Headers Middleware > Permissions Policy > should disable sensitive permissions",
+          "state": "passed"
+        },
+        {
+          "name": "should enforce no-referrer policy",
+          "fullName": "Security Headers Middleware > Referrer Policy > should enforce no-referrer policy",
+          "state": "passed"
+        },
+        {
+          "name": "should enable XSS protection",
+          "fullName": "Security Headers Middleware > XSS Protection > should enable XSS protection",
+          "state": "passed"
+        },
+        {
+          "name": "should prevent MIME-type sniffing",
+          "fullName": "Security Headers Middleware > Content-Type Sniffing > should prevent MIME-type sniffing",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/api/http/middleware/__tests__/cors.middleware.test.ts",
+      "tests": [
+        {
+          "name": "should have default configuration",
+          "fullName": "CORS Middleware > DEFAULT_CORS_CONFIG > should have default configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should allow content-type header by default",
+          "fullName": "CORS Middleware > DEFAULT_CORS_CONFIG > should allow content-type header by default",
+          "state": "passed"
+        },
+        {
+          "name": "should expose rate limit headers",
+          "fullName": "CORS Middleware > DEFAULT_CORS_CONFIG > should expose rate limit headers",
+          "state": "passed"
+        },
+        {
+          "name": "should add CORS headers to response when origin is allowed",
+          "fullName": "CORS Middleware > addCORSHeaders > should add CORS headers to response when origin is allowed",
+          "state": "passed"
+        },
+        {
+          "name": "should allow any origin when * is in allowedOrigins",
+          "fullName": "CORS Middleware > addCORSHeaders > should allow any origin when * is in allowedOrigins",
+          "state": "passed"
+        },
+        {
+          "name": "should set Access-Control-Max-Age",
+          "fullName": "CORS Middleware > addCORSHeaders > should set Access-Control-Max-Age",
+          "state": "passed"
+        },
+        {
+          "name": "should expose headers",
+          "fullName": "CORS Middleware > addCORSHeaders > should expose headers",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve existing headers",
+          "fullName": "CORS Middleware > addCORSHeaders > should preserve existing headers",
+          "state": "passed"
+        },
+        {
+          "name": "should not add CORS headers if origin not allowed",
+          "fullName": "CORS Middleware > addCORSHeaders > should not add CORS headers if origin not allowed",
+          "state": "passed"
+        },
+        {
+          "name": "should set credentials header when enabled",
+          "fullName": "CORS Middleware > addCORSHeaders > should set credentials header when enabled",
+          "state": "passed"
+        },
+        {
+          "name": "should not set credentials header when disabled",
+          "fullName": "CORS Middleware > addCORSHeaders > should not set credentials header when disabled",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve response status",
+          "fullName": "CORS Middleware > addCORSHeaders > should preserve response status",
+          "state": "passed"
+        },
+        {
+          "name": "should return 204 for valid preflight request",
+          "fullName": "CORS Middleware > handleCORSPreflight > should return 204 for valid preflight request",
+          "state": "passed"
+        },
+        {
+          "name": "should return 403 for disallowed origin",
+          "fullName": "CORS Middleware > handleCORSPreflight > should return 403 for disallowed origin",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Allow-Methods",
+          "fullName": "CORS Middleware > handleCORSPreflight > should include Access-Control-Allow-Methods",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Allow-Headers",
+          "fullName": "CORS Middleware > handleCORSPreflight > should include Access-Control-Allow-Headers",
+          "state": "passed"
+        },
+        {
+          "name": "should include Access-Control-Max-Age",
+          "fullName": "CORS Middleware > handleCORSPreflight > should include Access-Control-Max-Age",
+          "state": "passed"
+        },
+        {
+          "name": "should reject null origin",
+          "fullName": "CORS Middleware > handleCORSPreflight > should reject null origin",
+          "state": "passed"
+        },
+        {
+          "name": "should set wildcard origin for allowed requests",
+          "fullName": "CORS Middleware > handleCORSPreflight > should set wildcard origin for allowed requests",
+          "state": "passed"
+        },
+        {
+          "name": "should return middleware object with handlePreflight and addHeaders methods",
+          "fullName": "CORS Middleware > createCORSMiddleware > should return middleware object with handlePreflight and addHeaders methods",
+          "state": "passed"
+        },
+        {
+          "name": "should handle OPTIONS request as preflight",
+          "fullName": "CORS Middleware > createCORSMiddleware > should handle OPTIONS request as preflight",
+          "state": "passed"
+        },
+        {
+          "name": "should return undefined for non-OPTIONS request",
+          "fullName": "CORS Middleware > createCORSMiddleware > should return undefined for non-OPTIONS request",
+          "state": "passed"
+        },
+        {
+          "name": "should add CORS headers to response",
+          "fullName": "CORS Middleware > createCORSMiddleware > should add CORS headers to response",
+          "state": "passed"
+        },
+        {
+          "name": "should accept custom configuration",
+          "fullName": "CORS Middleware > createCORSMiddleware > should accept custom configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should reject disallowed origins in custom config",
+          "fullName": "CORS Middleware > createCORSMiddleware > should reject disallowed origins in custom config",
+          "state": "passed"
+        },
+        {
+          "name": "should match wildcard origin",
+          "fullName": "CORS Middleware > Origin Matching > should match wildcard origin",
+          "state": "passed"
+        },
+        {
+          "name": "should match specific origin",
+          "fullName": "CORS Middleware > Origin Matching > should match specific origin",
+          "state": "passed"
+        },
+        {
+          "name": "should not match origin not in list",
+          "fullName": "CORS Middleware > Origin Matching > should not match origin not in list",
+          "state": "passed"
+        },
+        {
+          "name": "should allow configured HTTP methods",
+          "fullName": "CORS Middleware > Methods Configuration > should allow configured HTTP methods",
+          "state": "passed"
+        },
+        {
+          "name": "should respect custom methods configuration",
+          "fullName": "CORS Middleware > Methods Configuration > should respect custom methods configuration",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/api/http/schemas/__tests__/query-params.schema.test.ts",
+      "tests": [
+        {
+          "name": "should validate valid current WBGT query",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should validate valid current WBGT query",
+          "state": "passed"
+        },
+        {
+          "name": "should reject invalid latitude",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should reject invalid latitude",
+          "state": "passed"
+        },
+        {
+          "name": "should reject invalid longitude",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should reject invalid longitude",
+          "state": "passed"
+        },
+        {
+          "name": "should accept optional timestamp",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should accept optional timestamp",
+          "state": "passed"
+        },
+        {
+          "name": "should reject invalid timestamp",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should reject invalid timestamp",
+          "state": "passed"
+        },
+        {
+          "name": "should accept source parameter",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should accept source parameter",
+          "state": "passed"
+        },
+        {
+          "name": "should coerce string numbers to numbers",
+          "fullName": "Query Parameter Validation Schemas > CurrentWBGTQuerySchema > should coerce string numbers to numbers",
+          "state": "passed"
+        },
+        {
+          "name": "should validate valid forecast query",
+          "fullName": "Query Parameter Validation Schemas > ForecastWBGTQuerySchema > should validate valid forecast query",
+          "state": "passed"
+        },
+        {
+          "name": "should use default days value",
+          "fullName": "Query Parameter Validation Schemas > ForecastWBGTQuerySchema > should use default days value",
+          "state": "passed"
+        },
+        {
+          "name": "should reject days greater than 16",
+          "fullName": "Query Parameter Validation Schemas > ForecastWBGTQuerySchema > should reject days greater than 16",
+          "state": "passed"
+        },
+        {
+          "name": "should reject days less than 1",
+          "fullName": "Query Parameter Validation Schemas > ForecastWBGTQuerySchema > should reject days less than 1",
+          "state": "passed"
+        },
+        {
+          "name": "should only allow open-meteo as source",
+          "fullName": "Query Parameter Validation Schemas > ForecastWBGTQuerySchema > should only allow open-meteo as source",
+          "state": "passed"
+        },
+        {
+          "name": "should validate valid historic query",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should validate valid historic query",
+          "state": "passed"
+        },
+        {
+          "name": "should reject invalid date format",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should reject invalid date format",
+          "state": "passed"
+        },
+        {
+          "name": "should reject end date before start date",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should reject end date before start date",
+          "state": "passed"
+        },
+        {
+          "name": "should accept date range exceeding 365 days",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should accept date range exceeding 365 days",
+          "state": "passed"
+        },
+        {
+          "name": "should accept large multi-year date range",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should accept large multi-year date range",
+          "state": "passed"
+        },
+        {
+          "name": "should accept source parameter (open-meteo or kong)",
+          "fullName": "Query Parameter Validation Schemas > HistoricWBGTQuerySchema > should accept source parameter (open-meteo or kong)",
+          "state": "passed"
+        },
+        {
+          "name": "should validate valid observations query",
+          "fullName": "Query Parameter Validation Schemas > ObservationsQuerySchema > should validate valid observations query",
+          "state": "passed"
+        },
+        {
+          "name": "should accept date range exceeding 365 days",
+          "fullName": "Query Parameter Validation Schemas > ObservationsQuerySchema > should accept date range exceeding 365 days",
+          "state": "passed"
+        },
+        {
+          "name": "should accept source parameter",
+          "fullName": "Query Parameter Validation Schemas > ObservationsQuerySchema > should accept source parameter",
+          "state": "passed"
+        },
+        {
+          "name": "should accept empty query object",
+          "fullName": "Query Parameter Validation Schemas > HealthCheckQuerySchema > should accept empty query object",
+          "state": "passed"
+        },
+        {
+          "name": "should reject any extra properties (strict mode)",
+          "fullName": "Query Parameter Validation Schemas > HealthCheckQuerySchema > should reject any extra properties (strict mode)",
+          "state": "passed"
+        },
+        {
+          "name": "should accept latitude -90 to 90",
+          "fullName": "Query Parameter Validation Schemas > Coordinate Validation > should accept latitude -90 to 90",
+          "state": "passed"
+        },
+        {
+          "name": "should accept longitude -180 to 180",
+          "fullName": "Query Parameter Validation Schemas > Coordinate Validation > should accept longitude -180 to 180",
+          "state": "passed"
+        },
+        {
+          "name": "should reject latitude outside range",
+          "fullName": "Query Parameter Validation Schemas > Coordinate Validation > should reject latitude outside range",
+          "state": "passed"
+        },
+        {
+          "name": "should reject longitude outside range",
+          "fullName": "Query Parameter Validation Schemas > Coordinate Validation > should reject longitude outside range",
+          "state": "passed"
+        },
+        {
+          "name": "should accept valid dates",
+          "fullName": "Query Parameter Validation Schemas > Date Validation > should accept valid dates",
+          "state": "passed"
+        },
+        {
+          "name": "should reject invalid date formats",
+          "fullName": "Query Parameter Validation Schemas > Date Validation > should reject invalid date formats",
+          "state": "passed"
+        },
+        {
+          "name": "should coerce string coordinates to numbers",
+          "fullName": "Query Parameter Validation Schemas > Type Coercion > should coerce string coordinates to numbers",
+          "state": "passed"
+        },
+        {
+          "name": "should coerce string days to number",
+          "fullName": "Query Parameter Validation Schemas > Type Coercion > should coerce string days to number",
+          "state": "passed"
+        },
+        {
+          "name": "should reject non-numeric strings",
+          "fullName": "Query Parameter Validation Schemas > Type Coercion > should reject non-numeric strings",
+          "state": "passed"
+        },
+        {
+          "name": "should return parsed data on success",
+          "fullName": "Query Parameter Validation Schemas > validateQueryParams function > should return parsed data on success",
+          "state": "passed"
+        },
+        {
+          "name": "should throw error on validation failure",
+          "fullName": "Query Parameter Validation Schemas > validateQueryParams function > should throw error on validation failure",
+          "state": "passed"
+        },
+        {
+          "name": "should attach validation errors to thrown error",
+          "fullName": "Query Parameter Validation Schemas > validateQueryParams function > should attach validation errors to thrown error",
+          "state": "passed"
+        },
+        {
+          "name": "should include field information in errors",
+          "fullName": "Query Parameter Validation Schemas > validateQueryParams function > should include field information in errors",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/services/weather/__tests__/weather-fetcher.service.test.ts",
+      "tests": [
+        {
+          "name": "should fetch standard weather data without enhancement",
+          "fullName": "WeatherFetcherService > fetchWeather > should fetch standard weather data without enhancement",
+          "state": "passed"
+        },
+        {
+          "name": "should enhance weather data with solar radiation service",
+          "fullName": "WeatherFetcherService > fetchWeather > should enhance weather data with solar radiation service",
+          "state": "passed"
+        },
+        {
+          "name": "should handle multiple dates for enhancement",
+          "fullName": "WeatherFetcherService > fetchWeather > should handle multiple dates for enhancement",
+          "state": "passed"
+        },
+        {
+          "name": "should continue with standard data if enhancement fails",
+          "fullName": "WeatherFetcherService > fetchWeather > should continue with standard data if enhancement fails",
+          "state": "passed"
+        },
+        {
+          "name": "should fetch current day weather with enhancement",
+          "fullName": "WeatherFetcherService > fetchCurrentDayWeather > should fetch current day weather with enhancement",
+          "state": "passed"
+        },
+        {
+          "name": "should fetch historical weather with enhancement",
+          "fullName": "WeatherFetcherService > fetchHistoricalWeather > should fetch historical weather with enhancement",
+          "state": "passed"
+        },
+        {
+          "name": "should handle weather API errors",
+          "fullName": "WeatherFetcherService > error handling > should handle weather API errors",
+          "state": "passed"
+        },
+        {
+          "name": "should handle network errors",
+          "fullName": "WeatherFetcherService > error handling > should handle network errors",
+          "state": "passed"
+        },
+        {
+          "name": "should handle single day requests",
+          "fullName": "WeatherFetcherService > date range handling > should handle single day requests",
+          "state": "passed"
+        },
+        {
+          "name": "should handle multi-day requests",
+          "fullName": "WeatherFetcherService > date range handling > should handle multi-day requests",
+          "state": "passed"
+        },
+        {
+          "name": "should construct correct API URL",
+          "fullName": "WeatherFetcherService > URL construction > should construct correct API URL",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/constants/__tests__/location.constants.test.ts",
+      "tests": [
+        {
+          "name": "should export Sydney timezone configuration",
+          "fullName": "Location Constants > Timezone Configurations > should export Sydney timezone configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should export JST timezone configuration",
+          "fullName": "Location Constants > Timezone Configurations > should export JST timezone configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should export UTC timezone configuration",
+          "fullName": "Location Constants > Timezone Configurations > should export UTC timezone configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should calculate timezone offsets correctly",
+          "fullName": "Location Constants > Timezone Configurations > should calculate timezone offsets correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should handle Sydney DST transitions correctly",
+          "fullName": "Location Constants > Timezone Configurations > should handle Sydney DST transitions correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should export Sydney location configuration",
+          "fullName": "Location Constants > Location Configurations > should export Sydney location configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should export Tokyo location configuration",
+          "fullName": "Location Constants > Location Configurations > should export Tokyo location configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should export New York location configuration",
+          "fullName": "Location Constants > Location Configurations > should export New York location configuration",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid coordinate ranges",
+          "fullName": "Location Constants > Location Configurations > should have valid coordinate ranges",
+          "state": "passed"
+        },
+        {
+          "name": "should set Sydney as default location",
+          "fullName": "Location Constants > Default Location > should set Sydney as default location",
+          "state": "passed"
+        },
+        {
+          "name": "should export BOM Sydney location ID",
+          "fullName": "Location Constants > BOM Location ID > should export BOM Sydney location ID",
+          "state": "passed"
+        },
+        {
+          "name": "should export supported locations mapping",
+          "fullName": "Location Constants > Supported Locations > should export supported locations mapping",
+          "state": "passed"
+        },
+        {
+          "name": "should have correct location keys",
+          "fullName": "Location Constants > Supported Locations > should have correct location keys",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid location objects in supported locations",
+          "fullName": "Location Constants > Supported Locations > should have valid location objects in supported locations",
+          "state": "passed"
+        },
+        {
+          "name": "should have consistent location object structure",
+          "fullName": "Location Constants > Type Consistency > should have consistent location object structure",
+          "state": "passed"
+        },
+        {
+          "name": "should have consistent timezone object structure",
+          "fullName": "Location Constants > Type Consistency > should have consistent timezone object structure",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/api/http/middleware/__tests__/error-handler.middleware.test.ts",
+      "tests": [
+        {
+          "name": "should create a response with 400 status for validation errors",
+          "fullName": "Error Handler Middleware > createErrorResponse > should create a response with 400 status for validation errors",
+          "state": "passed"
+        },
+        {
+          "name": "should create a response with 429 status for rate limit errors",
+          "fullName": "Error Handler Middleware > createErrorResponse > should create a response with 429 status for rate limit errors",
+          "state": "passed"
+        },
+        {
+          "name": "should create a response with 500 status for app errors",
+          "fullName": "Error Handler Middleware > createErrorResponse > should create a response with 500 status for app errors",
+          "state": "passed"
+        },
+        {
+          "name": "should include error code and message in response",
+          "fullName": "Error Handler Middleware > createErrorResponse > should include error code and message in response",
+          "state": "passed"
+        },
+        {
+          "name": "should include timestamp in response",
+          "fullName": "Error Handler Middleware > createErrorResponse > should include timestamp in response",
+          "state": "passed"
+        },
+        {
+          "name": "should set Content-Type header",
+          "fullName": "Error Handler Middleware > createErrorResponse > should set Content-Type header",
+          "state": "passed"
+        },
+        {
+          "name": "should handle AppError instances",
+          "fullName": "Error Handler Middleware > handleError > should handle AppError instances",
+          "state": "passed"
+        },
+        {
+          "name": "should handle ValidationError instances",
+          "fullName": "Error Handler Middleware > handleError > should handle ValidationError instances",
+          "state": "passed"
+        },
+        {
+          "name": "should handle CoordinateError instances",
+          "fullName": "Error Handler Middleware > handleError > should handle CoordinateError instances",
+          "state": "passed"
+        },
+        {
+          "name": "should handle native Error instances",
+          "fullName": "Error Handler Middleware > handleError > should handle native Error instances",
+          "state": "passed"
+        },
+        {
+          "name": "should handle string errors",
+          "fullName": "Error Handler Middleware > handleError > should handle string errors",
+          "state": "passed"
+        },
+        {
+          "name": "should handle unknown errors",
+          "fullName": "Error Handler Middleware > handleError > should handle unknown errors",
+          "state": "passed"
+        },
+        {
+          "name": "should sanitize error messages for non-validation errors",
+          "fullName": "Error Handler Middleware > handleError > should sanitize error messages for non-validation errors",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve validation error messages",
+          "fullName": "Error Handler Middleware > handleError > should preserve validation error messages",
+          "state": "passed"
+        },
+        {
+          "name": "should include security headers in response",
+          "fullName": "Error Handler Middleware > handleError > should include security headers in response",
+          "state": "passed"
+        },
+        {
+          "name": "should handle rate limit errors correctly",
+          "fullName": "Error Handler Middleware > handleError > should handle rate limit errors correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should wrap async function and catch errors",
+          "fullName": "Error Handler Middleware > withErrorHandling > should wrap async function and catch errors",
+          "state": "passed"
+        },
+        {
+          "name": "should pass through successful responses",
+          "fullName": "Error Handler Middleware > withErrorHandling > should pass through successful responses",
+          "state": "passed"
+        },
+        {
+          "name": "should handle errors in async handlers",
+          "fullName": "Error Handler Middleware > withErrorHandling > should handle errors in async handlers",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve response body",
+          "fullName": "Error Handler Middleware > withErrorHandling > should preserve response body",
+          "state": "passed"
+        },
+        {
+          "name": "should wrap sync function and catch errors",
+          "fullName": "Error Handler Middleware > withErrorHandlingSync > should wrap sync function and catch errors",
+          "state": "passed"
+        },
+        {
+          "name": "should pass through successful responses",
+          "fullName": "Error Handler Middleware > withErrorHandlingSync > should pass through successful responses",
+          "state": "passed"
+        },
+        {
+          "name": "should handle errors in sync handlers",
+          "fullName": "Error Handler Middleware > withErrorHandlingSync > should handle errors in sync handlers",
+          "state": "passed"
+        },
+        {
+          "name": "should sanitize internal error details",
+          "fullName": "Error Handler Middleware > Error Sanitization > should sanitize internal error details",
+          "state": "passed"
+        },
+        {
+          "name": "should expose validation error details",
+          "fullName": "Error Handler Middleware > Error Sanitization > should expose validation error details",
+          "state": "passed"
+        },
+        {
+          "name": "should preserve error code",
+          "fullName": "Error Handler Middleware > Error Sanitization > should preserve error code",
+          "state": "passed"
+        },
+        {
+          "name": "should include success: false in error response",
+          "fullName": "Error Handler Middleware > Response Structure > should include success: false in error response",
+          "state": "passed"
+        },
+        {
+          "name": "should include timestamp in error response",
+          "fullName": "Error Handler Middleware > Response Structure > should include timestamp in error response",
+          "state": "passed"
+        },
+        {
+          "name": "should include error object with code and message",
+          "fullName": "Error Handler Middleware > Response Structure > should include error object with code and message",
+          "state": "passed"
+        },
+        {
+          "name": "should return 400 for validation errors",
+          "fullName": "Error Handler Middleware > HTTP Status Codes > should return 400 for validation errors",
+          "state": "passed"
+        },
+        {
+          "name": "should return 429 for rate limit errors",
+          "fullName": "Error Handler Middleware > HTTP Status Codes > should return 429 for rate limit errors",
+          "state": "passed"
+        },
+        {
+          "name": "should return 500 for calculation errors",
+          "fullName": "Error Handler Middleware > HTTP Status Codes > should return 500 for calculation errors",
+          "state": "passed"
+        },
+        {
+          "name": "should return 500 for unknown errors",
+          "fullName": "Error Handler Middleware > HTTP Status Codes > should return 500 for unknown errors",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/calculations/solar/__tests__/solar-geometry.test.ts",
+      "tests": [
+        {
+          "name": "should route to Sydney calculation for UTC+10 with DST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleByTimezone > should route to Sydney calculation for UTC+10 with DST",
+          "state": "passed"
+        },
+        {
+          "name": "should route to JST calculation for UTC+9 without DST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleByTimezone > should route to JST calculation for UTC+9 without DST",
+          "state": "passed"
+        },
+        {
+          "name": "should throw error for unsupported timezone (UTC+8 with DST)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleByTimezone > should throw error for unsupported timezone (UTC+8 with DST)",
+          "state": "passed"
+        },
+        {
+          "name": "should throw error for unsupported timezone (UTC+10 without DST)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleByTimezone > should throw error for unsupported timezone (UTC+10 without DST)",
+          "state": "passed"
+        },
+        {
+          "name": "should throw error for unsupported timezone (UTC+9 with DST)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleByTimezone > should throw error for unsupported timezone (UTC+9 with DST)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle DST calculation correctly for summer month",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle DST calculation correctly for summer month",
+          "state": "passed"
+        },
+        {
+          "name": "should handle DST calculation correctly for winter month",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle DST calculation correctly for winter month",
+          "state": "passed"
+        },
+        {
+          "name": "should handle DST boundary correctly for October",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle DST boundary correctly for October",
+          "state": "passed"
+        },
+        {
+          "name": "should handle DST boundary correctly for March",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle DST boundary correctly for March",
+          "state": "passed"
+        },
+        {
+          "name": "should handle day rollover from UTC conversion (early morning)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle day rollover from UTC conversion (early morning)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle month rollover from UTC conversion",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle month rollover from UTC conversion",
+          "state": "passed"
+        },
+        {
+          "name": "should handle year rollover from UTC conversion",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle year rollover from UTC conversion",
+          "state": "passed"
+        },
+        {
+          "name": "should handle February 29 in leap year during day rollover",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle February 29 in leap year during day rollover",
+          "state": "passed"
+        },
+        {
+          "name": "should handle leap year calculations correctly",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle leap year calculations correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should handle edge case of maximum solar elevation (solar noon)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle edge case of maximum solar elevation (solar noon)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle edge case of nighttime (high zenith angle)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle edge case of nighttime (high zenith angle)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle boundary values correctly",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngle (Sydney timezone) > should handle boundary values correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should calculate zenith angle for Tokyo coordinates",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should calculate zenith angle for Tokyo coordinates",
+          "state": "passed"
+        },
+        {
+          "name": "should handle day rollover from UTC conversion in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle day rollover from UTC conversion in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle month rollover from UTC conversion in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle month rollover from UTC conversion in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle year rollover from UTC conversion in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle year rollover from UTC conversion in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle February 29 in leap year during day rollover in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle February 29 in leap year during day rollover in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle leap year calculations correctly in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle leap year calculations correctly in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle summer solstice (maximum solar elevation)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle summer solstice (maximum solar elevation)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle winter solstice (minimum solar elevation)",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle winter solstice (minimum solar elevation)",
+          "state": "passed"
+        },
+        {
+          "name": "should handle nighttime calculations in JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle nighttime calculations in JST",
+          "state": "passed"
+        },
+        {
+          "name": "should handle boundary values for JST",
+          "fullName": "Solar Geometry Calculations > calculateSolarZenithAngleJST (Tokyo timezone) > should handle boundary values for JST",
+          "state": "passed"
+        },
+        {
+          "name": "should give same result for same conditions regardless of routing method",
+          "fullName": "Solar Geometry Calculations > Calculation consistency and validation > should give same result for same conditions regardless of routing method",
+          "state": "passed"
+        },
+        {
+          "name": "should handle different locations correctly",
+          "fullName": "Solar Geometry Calculations > Calculation consistency and validation > should handle different locations correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should handle extreme coordinate values",
+          "fullName": "Solar Geometry Calculations > Calculation consistency and validation > should handle extreme coordinate values",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/weather-data-extractor.test.ts",
+      "tests": [
+        {
+          "name": "should build time-indexed maps from Open-Meteo arrays",
+          "fullName": "WeatherDataExtractor > should build time-indexed maps from Open-Meteo arrays",
+          "state": "passed"
+        },
+        {
+          "name": "should extract radiation data correctly",
+          "fullName": "WeatherDataExtractor > should extract radiation data correctly",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/calculations/__tests__/simple-wbgt.test.ts",
+      "tests": [
+        {
+          "name": "should calculate WBGT using ESI formula",
+          "fullName": "Simple WBGT Calculations > calculateWBGT > should calculate WBGT using ESI formula",
+          "state": "passed"
+        },
+        {
+          "name": "should handle edge cases",
+          "fullName": "Simple WBGT Calculations > calculateWBGT > should handle edge cases",
+          "state": "passed"
+        },
+        {
+          "name": "should produce reasonable results for known scenarios",
+          "fullName": "Simple WBGT Calculations > calculateWBGT > should produce reasonable results for known scenarios",
+          "state": "passed"
+        },
+        {
+          "name": "should calculate enhanced WBGT using vapor pressure",
+          "fullName": "Simple WBGT Calculations > calculateEWBGT > should calculate enhanced WBGT using vapor pressure",
+          "state": "passed"
+        },
+        {
+          "name": "should handle low vapor pressure",
+          "fullName": "Simple WBGT Calculations > calculateEWBGT > should handle low vapor pressure",
+          "state": "passed"
+        },
+        {
+          "name": "should produce results in reasonable range",
+          "fullName": "Simple WBGT Calculations > calculateEWBGT > should produce results in reasonable range",
+          "state": "passed"
+        },
+        {
+          "name": "should calculate Apparent Temperature",
+          "fullName": "Simple WBGT Calculations > calculateAT > should calculate Apparent Temperature",
+          "state": "passed"
+        },
+        {
+          "name": "should handle different wind speeds",
+          "fullName": "Simple WBGT Calculations > calculateAT > should handle different wind speeds",
+          "state": "passed"
+        },
+        {
+          "name": "should handle edge cases",
+          "fullName": "Simple WBGT Calculations > calculateAT > should handle edge cases",
+          "state": "passed"
+        },
+        {
+          "name": "should convert wind speed from km/h to m/s correctly",
+          "fullName": "Simple WBGT Calculations > calculateAT > should convert wind speed from km/h to m/s correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should produce mathematically sound results",
+          "fullName": "Simple WBGT Calculations > Formula validation > should produce mathematically sound results",
+          "state": "passed"
+        },
+        {
+          "name": "should handle zero values gracefully",
+          "fullName": "Simple WBGT Calculations > Formula validation > should handle zero values gracefully",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/utils/__tests__/historical-fetcher.test.ts",
+      "tests": [
+        {
+          "name": "should fetch and process data for Sydney timezone",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should fetch and process data for Sydney timezone",
+          "state": "passed"
+        },
+        {
+          "name": "should fetch and process data for Tokyo timezone",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should fetch and process data for Tokyo timezone",
+          "state": "passed"
+        },
+        {
+          "name": "should handle default timezone parameters",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle default timezone parameters",
+          "state": "passed"
+        },
+        {
+          "name": "should accept valid date ranges",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should accept valid date ranges",
+          "state": "passed"
+        },
+        {
+          "name": "should handle single day requests",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle single day requests",
+          "state": "passed"
+        },
+        {
+          "name": "should handle extreme latitude values",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle extreme latitude values",
+          "state": "passed"
+        },
+        {
+          "name": "should handle different UTC offsets",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle different UTC offsets",
+          "state": "passed"
+        },
+        {
+          "name": "should return Promise that resolves to array",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should return Promise that resolves to array",
+          "state": "passed"
+        },
+        {
+          "name": "should handle API errors gracefully",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle API errors gracefully",
+          "state": "passed"
+        },
+        {
+          "name": "should handle network errors gracefully",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should handle network errors gracefully",
+          "state": "passed"
+        },
+        {
+          "name": "should validate date range (reject future dates)",
+          "fullName": "HistoricalFetcher > fetchKongWBGTByTimezone > should validate date range (reject future dates)",
+          "state": "passed"
+        },
+        {
+          "name": "should create instance of HistoricalFetcher",
+          "fullName": "HistoricalFetcher > class instantiation > should create instance of HistoricalFetcher",
+          "state": "passed"
+        },
+        {
+          "name": "should have fetchKongWBGTByTimezone method",
+          "fullName": "HistoricalFetcher > class instantiation > should have fetchKongWBGTByTimezone method",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/utils/__tests__/formatters.basic.test.ts",
+      "tests": [
+        {
+          "name": "should format temperatures",
+          "fullName": "Formatters Basic Tests > should format temperatures",
+          "state": "passed"
+        },
+        {
+          "name": "should format humidity",
+          "fullName": "Formatters Basic Tests > should format humidity",
+          "state": "passed"
+        },
+        {
+          "name": "should format wind speed",
+          "fullName": "Formatters Basic Tests > should format wind speed",
+          "state": "passed"
+        },
+        {
+          "name": "should format solar radiation",
+          "fullName": "Formatters Basic Tests > should format solar radiation",
+          "state": "passed"
+        },
+        {
+          "name": "should format pressure",
+          "fullName": "Formatters Basic Tests > should format pressure",
+          "state": "passed"
+        },
+        {
+          "name": "should format angles",
+          "fullName": "Formatters Basic Tests > should format angles",
+          "state": "passed"
+        },
+        {
+          "name": "should format numbers",
+          "fullName": "Formatters Basic Tests > should format numbers",
+          "state": "passed"
+        },
+        {
+          "name": "should format timestamps",
+          "fullName": "Formatters Basic Tests > should format timestamps",
+          "state": "passed"
+        },
+        {
+          "name": "should format observation values",
+          "fullName": "Formatters Basic Tests > should format observation values",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/constants/__tests__/index.test.ts",
+      "tests": [
+        {
+          "name": "should export all physical constants",
+          "fullName": "Constants Index Exports > should export all physical constants",
+          "state": "passed"
+        },
+        {
+          "name": "should export all WBGT formula constants",
+          "fullName": "Constants Index Exports > should export all WBGT formula constants",
+          "state": "passed"
+        },
+        {
+          "name": "should export all location constants",
+          "fullName": "Constants Index Exports > should export all location constants",
+          "state": "passed"
+        },
+        {
+          "name": "should export all cache constants",
+          "fullName": "Constants Index Exports > should export all cache constants",
+          "state": "passed"
+        },
+        {
+          "name": "should import specific constants correctly",
+          "fullName": "Constants Index Exports > should import specific constants correctly",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid physical constant values",
+          "fullName": "Constants Index Exports > should have valid physical constant values",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid WBGT formula constants",
+          "fullName": "Constants Index Exports > should have valid WBGT formula constants",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid cache constants",
+          "fullName": "Constants Index Exports > should have valid cache constants",
+          "state": "passed"
+        },
+        {
+          "name": "should have location constants with proper structure",
+          "fullName": "Constants Index Exports > should have location constants with proper structure",
+          "state": "passed"
+        },
+        {
+          "name": "should export expected number of constants",
+          "fullName": "Constants Index Exports > should export expected number of constants",
+          "state": "passed"
+        },
+        {
+          "name": "should have immutable constants",
+          "fullName": "Constants Index Exports > should have immutable constants",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/calculations/__tests__/index.test.ts",
+      "tests": [
+        {
+          "name": "should export all calculation functions",
+          "fullName": "Calculations Index Exports > should export all calculation functions",
+          "state": "passed"
+        },
+        {
+          "name": "should export functions that can be called",
+          "fullName": "Calculations Index Exports > should export functions that can be called",
+          "state": "passed"
+        },
+        {
+          "name": "should return reasonable values for basic function calls",
+          "fullName": "Calculations Index Exports > should return reasonable values for basic function calls",
+          "state": "passed"
+        },
+        {
+          "name": "should have consistent function signatures",
+          "fullName": "Calculations Index Exports > should have consistent function signatures",
+          "state": "passed"
+        },
+        {
+          "name": "should export all major calculation categories",
+          "fullName": "Calculations Index Exports > should export all major calculation categories",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/utils/__tests__/index.test.ts",
+      "tests": [
+        {
+          "name": "should export utility modules",
+          "fullName": "Utils Index Exports > should export utility modules",
+          "state": "passed"
+        },
+        {
+          "name": "should be an object with exports",
+          "fullName": "Utils Index Exports > should be an object with exports",
+          "state": "passed"
+        },
+        {
+          "name": "should have valid export structure",
+          "fullName": "Utils Index Exports > should have valid export structure",
+          "state": "passed"
+        },
+        {
+          "name": "should not have undefined exports",
+          "fullName": "Utils Index Exports > should not have undefined exports",
+          "state": "passed"
+        },
+        {
+          "name": "should maintain consistent export pattern",
+          "fullName": "Utils Index Exports > should maintain consistent export pattern",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/kong-pipeline-timezone.test.ts",
+      "tests": [
+        {
+          "name": "should calculate Kong WBGT for Sydney with unified timezone function",
+          "fullName": "Kong WBGT Pipeline - Timezone Unified Function > should calculate Kong WBGT for Sydney with unified timezone function",
+          "state": "passed"
+        },
+        {
+          "name": "should produce equivalent results to Sydney-specific function",
+          "fullName": "Kong WBGT Pipeline - Timezone Unified Function > should produce equivalent results to Sydney-specific function",
+          "state": "passed"
+        },
+        {
+          "name": "should produce equivalent results to JST-specific function for Tokyo",
+          "fullName": "Kong WBGT Pipeline - Timezone Unified Function > should produce equivalent results to JST-specific function for Tokyo",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/domain/entities/__tests__/domain-objects.test.ts",
+      "tests": [
+        {
+          "name": "should create a valid location",
+          "fullName": "Domain Objects - Basic Functionality > Location > should create a valid location",
+          "state": "passed"
+        },
+        {
+          "name": "should validate location bounds",
+          "fullName": "Domain Objects - Basic Functionality > Location > should validate location bounds",
+          "state": "passed"
+        },
+        {
+          "name": "should calculate distance between locations",
+          "fullName": "Domain Objects - Basic Functionality > Location > should calculate distance between locations",
+          "state": "passed"
+        },
+        {
+          "name": "should create temperature in Celsius",
+          "fullName": "Domain Objects - Basic Functionality > Temperature > should create temperature in Celsius",
+          "state": "passed"
+        },
+        {
+          "name": "should convert between units",
+          "fullName": "Domain Objects - Basic Functionality > Temperature > should convert between units",
+          "state": "passed"
+        },
+        {
+          "name": "should determine comfort levels",
+          "fullName": "Domain Objects - Basic Functionality > Temperature > should determine comfort levels",
+          "state": "passed"
+        },
+        {
+          "name": "should create pressure in hPa",
+          "fullName": "Domain Objects - Basic Functionality > Pressure > should create pressure in hPa",
+          "state": "passed"
+        },
+        {
+          "name": "should categorize pressure levels",
+          "fullName": "Domain Objects - Basic Functionality > Pressure > should categorize pressure levels",
+          "state": "passed"
+        },
+        {
+          "name": "should create wind speed in m/s",
+          "fullName": "Domain Objects - Basic Functionality > WindSpeed > should create wind speed in m/s",
+          "state": "passed"
+        },
+        {
+          "name": "should determine Beaufort scale",
+          "fullName": "Domain Objects - Basic Functionality > WindSpeed > should determine Beaufort scale",
+          "state": "passed"
+        },
+        {
+          "name": "should create solar radiation in W/m²",
+          "fullName": "Domain Objects - Basic Functionality > SolarRadiation > should create solar radiation in W/m²",
+          "state": "passed"
+        },
+        {
+          "name": "should categorize radiation levels",
+          "fullName": "Domain Objects - Basic Functionality > SolarRadiation > should categorize radiation levels",
+          "state": "passed"
+        },
+        {
+          "name": "should create complete weather conditions",
+          "fullName": "Domain Objects - Basic Functionality > WeatherConditions > should create complete weather conditions",
+          "state": "passed"
+        },
+        {
+          "name": "should generate weather descriptions",
+          "fullName": "Domain Objects - Basic Functionality > WeatherConditions > should generate weather descriptions",
+          "state": "passed"
+        },
+        {
+          "name": "should create WBGT result with risk assessment",
+          "fullName": "Domain Objects - Basic Functionality > WBGTResult > should create WBGT result with risk assessment",
+          "state": "passed"
+        },
+        {
+          "name": "should provide comprehensive heat stress assessment",
+          "fullName": "Domain Objects - Basic Functionality > WBGTResult > should provide comprehensive heat stress assessment",
+          "state": "passed"
+        },
+        {
+          "name": "should serialize and deserialize domain objects",
+          "fullName": "Domain Objects - Basic Functionality > JSON Serialization > should serialize and deserialize domain objects",
+          "state": "passed"
+        },
+        {
+          "name": "should serialize complex domain objects",
+          "fullName": "Domain Objects - Basic Functionality > JSON Serialization > should serialize complex domain objects",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/constants/__tests__/index.coverage.test.ts",
+      "tests": [
+        {
+          "name": "should export constants object",
+          "fullName": "Constants Index Coverage > should export constants object",
+          "state": "passed"
+        },
+        {
+          "name": "should have multiple exports",
+          "fullName": "Constants Index Coverage > should have multiple exports",
+          "state": "passed"
+        },
+        {
+          "name": "should export expected constant categories",
+          "fullName": "Constants Index Coverage > should export expected constant categories",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/historical-fetching-timezone.test.ts",
+      "tests": [
+        {
+          "name": "should verify that fetchKongWBGT and fetchKongWBGTJapan follow identical API extraction pattern",
+          "fullName": "Historical Fetching - Timezone Consolidated Pattern > should verify that fetchKongWBGT and fetchKongWBGTJapan follow identical API extraction pattern",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/example.test.ts",
+      "tests": [
+        {
+          "name": "should pass a basic test",
+          "fullName": "Example Test Suite > should pass a basic test",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/src/calculations/__tests__/index.coverage.test.ts",
+      "tests": [
+        {
+          "name": "should export calculations object",
+          "fullName": "Calculations Index Coverage > should export calculations object",
+          "state": "passed"
+        },
+        {
+          "name": "should have multiple calculation function exports",
+          "fullName": "Calculations Index Coverage > should have multiple calculation function exports",
+          "state": "passed"
+        },
+        {
+          "name": "should export expected calculation categories",
+          "fullName": "Calculations Index Coverage > should export expected calculation categories",
+          "state": "passed"
+        },
+        {
+          "name": "should export functions that are callable",
+          "fullName": "Calculations Index Coverage > should export functions that are callable",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/solar-zenith-timezone.test.ts",
+      "tests": [
+        {
+          "name": "should calculate valid solar zenith angle for Sydney",
+          "fullName": "Solar Zenith - Timezone Unified Function > should calculate valid solar zenith angle for Sydney",
+          "state": "passed"
+        },
+        {
+          "name": "should have unified timezone function that works for any UTC offset",
+          "fullName": "Solar Zenith - Timezone Unified Function > should have unified timezone function that works for any UTC offset",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/historical-fetcher.test.ts",
+      "tests": [
+        {
+          "name": "should have fetchKongWBGTByTimezone method",
+          "fullName": "HistoricalFetcher - Phase 2 Consolidation > should have fetchKongWBGTByTimezone method",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "/home/justin/wbgt-mcp-server/tests/constants.test.ts",
+      "tests": [
+        {
+          "name": "should use MOLECULAR_WEIGHT_AIR in calculateHeatTransferCoefficients",
+          "fullName": "Heat Transfer with MOLECULAR_WEIGHT_AIR > should use MOLECULAR_WEIGHT_AIR in calculateHeatTransferCoefficients",
+          "state": "passed"
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": [],
+  "reason": "passed"
+}

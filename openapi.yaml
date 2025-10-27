@@ -1,0 +1,556 @@
+openapi: 3.0.0
+info:
+  title: WBGT Sydney Runner API
+  version: 1.0.0
+  description: |
+    Wet Bulb Globe Temperature (WBGT) API providing current conditions, forecasts,
+    and historical observations for Sydney and custom locations using the Kong method
+    with advanced radiation and heat transfer modeling.
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: 'https://wbgt-mcp-server.workers.dev'
+    description: Production server
+  - url: 'http://localhost:8000'
+    description: Local development server
+
+tags:
+  - name: Current Conditions
+    description: Get current WBGT conditions
+  - name: Forecast
+    description: Get WBGT forecast data
+  - name: Historical Data
+    description: Get past observations and historical data
+  - name: Health
+    description: Service health check
+
+paths:
+  /api/current:
+    get:
+      summary: Get current WBGT conditions
+      description: Retrieves the current WBGT (Wet Bulb Globe Temperature) conditions for Sydney
+      tags:
+        - Current Conditions
+      operationId: getCurrentWBGT
+      responses:
+        '200':
+          description: Current WBGT conditions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  timestamp: '2025-10-27T12:00:00Z'
+                  temperature: 28.5
+                  humidity: 65
+                  dew_point: 20.2
+                  wind_speed_ms: 3.2
+                  solar_radiation: 450
+                  cloud_cover: 25
+                  uv_index: 6
+                  wbgt: 26.3
+                  esi: 24.1
+                  apparent_temp: 31.2
+                note: Current WBGT conditions in Sydney
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/forecast:
+    get:
+      summary: Get 72-hour WBGT forecast
+      description: Retrieves a 72-hour WBGT forecast for Sydney including solar radiation, cloud cover, UV index, and air quality
+      tags:
+        - Forecast
+      operationId: getWBGTForecast
+      responses:
+        '200':
+          description: WBGT forecast retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WBGTData'
+                  count:
+                    type: integer
+                    example: 72
+                  timestamp:
+                    type: string
+                    format: date-time
+                  note:
+                    type: string
+                    example: 'WBGT forecast (72 hours)'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/observations:
+    get:
+      summary: Get past 72 hours of WBGT observations
+      description: Retrieves WBGT observations from the past 72 hours using Kong method. Optionally returns maximum WBGT during a specific activity time window.
+      tags:
+        - Historical Data
+      operationId: getObservations
+      parameters:
+        - name: start_time
+          in: query
+          description: Optional start time in ISO format for activity-specific WBGT maximum
+          schema:
+            type: string
+            format: date-time
+          required: false
+        - name: end_time
+          in: query
+          description: Optional end time in ISO format. When both start_time and end_time provided, returns max WBGT values during the activity window
+          schema:
+            type: string
+            format: date-time
+          required: false
+      responses:
+        '200':
+          description: WBGT observations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WBGTData'
+                  count:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+                  note:
+                    type: string
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/historic_observations:
+    get:
+      summary: Get historical WBGT observations
+      description: Retrieves historical WBGT observations using Kong method with detailed radiation and heat transfer modeling. Supports custom locations.
+      tags:
+        - Historical Data
+      operationId: getHistoricObservations
+      parameters:
+        - name: start_date
+          in: query
+          description: Start date in YYYY-MM-DD format (required)
+          schema:
+            type: string
+            format: date
+          required: true
+        - name: end_date
+          in: query
+          description: End date in YYYY-MM-DD format (required, cannot be today - data not uploaded yet)
+          schema:
+            type: string
+            format: date
+          required: true
+        - name: latitude
+          in: query
+          description: Latitude of the location (default -33.8018 for Sydney)
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+          required: false
+        - name: longitude
+          in: query
+          description: Longitude of the location (default 151.1254 for Sydney)
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+          required: false
+      responses:
+        '200':
+          description: Historical WBGT observations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WBGTData'
+                  count:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+                  location:
+                    $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/historic_observations_japan:
+    get:
+      summary: Get historical WBGT observations for Japan
+      description: Retrieves historical WBGT observations for locations in Japan using Kong method (JST timezone)
+      tags:
+        - Historical Data
+      operationId: getHistoricObservationsJapan
+      parameters:
+        - name: start_date
+          in: query
+          description: Start date in YYYY-MM-DD format (required)
+          schema:
+            type: string
+            format: date
+          required: true
+        - name: end_date
+          in: query
+          description: End date in YYYY-MM-DD format (required)
+          schema:
+            type: string
+            format: date
+          required: true
+        - name: latitude
+          in: query
+          description: Latitude of the location in Japan (required)
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+          required: true
+        - name: longitude
+          in: query
+          description: Longitude of the location in Japan (required)
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+          required: true
+      responses:
+        '200':
+          description: Historical WBGT observations for Japan retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WBGTData'
+                  count:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+                  location:
+                    $ref: '#/components/schemas/Location'
+                  timezone:
+                    type: string
+                    example: 'JST (UTC+9)'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/health:
+    get:
+      summary: Health check endpoint
+      description: Checks if the service is running and healthy
+      tags:
+        - Health
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: 'WBGT Sydney Runner API'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api:
+    get:
+      summary: API documentation and endpoint listing
+      description: Returns information about available API endpoints
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: API information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  version:
+                    type: string
+                  deprecated:
+                    type: boolean
+                  endpoints:
+                    type: object
+
+  # Legacy API routes (v1 - Deprecated)
+  /api/v1/current:
+    get:
+      summary: Get current WBGT conditions (DEPRECATED)
+      deprecated: true
+      description: Deprecated endpoint. Please use /api/current instead.
+      tags:
+        - Current Conditions
+      responses:
+        '200':
+          description: Current WBGT conditions
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                example: 'true'
+            X-API-Warn:
+              schema:
+                type: string
+                example: 'This endpoint uses /api/v1 path. Please migrate to /api'
+
+  /api/v1/forecast:
+    get:
+      summary: Get WBGT forecast (DEPRECATED)
+      deprecated: true
+      description: Deprecated endpoint. Please use /api/forecast instead.
+      tags:
+        - Forecast
+      responses:
+        '200':
+          description: WBGT forecast
+
+  /api/v1/observations:
+    get:
+      summary: Get past 72 hours of WBGT observations (DEPRECATED)
+      deprecated: true
+      description: Deprecated endpoint. Please use /api/observations instead.
+      tags:
+        - Historical Data
+      responses:
+        '200':
+          description: WBGT observations
+
+  /api/v1/historic_observations:
+    get:
+      summary: Get historical WBGT observations (DEPRECATED)
+      deprecated: true
+      description: Deprecated endpoint. Please use /api/historic_observations instead.
+      tags:
+        - Historical Data
+      responses:
+        '200':
+          description: Historical WBGT observations
+
+components:
+  schemas:
+    WBGTData:
+      type: object
+      required:
+        - timestamp
+        - temperature
+        - humidity
+        - wbgt
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Observation timestamp
+        temperature:
+          type: number
+          format: float
+          description: Air temperature in Celsius
+        humidity:
+          type: number
+          format: float
+          description: Relative humidity as percentage (0-100)
+        dew_point:
+          type: number
+          format: float
+          description: Dew point in Celsius
+        wind_speed_ms:
+          type: number
+          format: float
+          description: Wind speed in meters per second
+        solar_radiation:
+          type: number
+          format: float
+          description: Solar radiation in W/m²
+        cloud_cover:
+          type: number
+          format: float
+          description: Cloud cover as percentage
+        uv_index:
+          type: number
+          format: float
+          description: UV index
+        wbgt:
+          type: number
+          format: float
+          description: Wet Bulb Globe Temperature in Celsius
+        esi:
+          type: number
+          format: float
+          description: Environmental Stress Index
+        apparent_temp:
+          type: number
+          format: float
+          description: Apparent temperature in Celsius
+
+    Location:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/WBGTData'
+            - type: array
+              items:
+                $ref: '#/components/schemas/WBGTData'
+        timestamp:
+          type: string
+          format: date-time
+        note:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: MISSING_REQUIRED_PARAMETERS
+            message:
+              type: string
+              description: Human-readable error message
+              example: 'Missing required parameters: start_date and end_date'
+            details:
+              type: object
+              description: Additional error details
+              additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+          description: The requested API path
+
+  responses:
+    BadRequest:
+      description: Bad request - validation or parameter error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: MISSING_REQUIRED_PARAMETERS
+              message: 'Missing required parameters: start_date and end_date'
+              details:
+                required:
+                  - start_date
+                  - end_date
+                optional:
+                  - latitude
+                  - longitude
+                format: YYYY-MM-DD
+                note: 'end_date cannot be today'
+            timestamp: '2025-10-27T12:00:00Z'
+            path: /api/historic_observations
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: INTERNAL_SERVER_ERROR
+              message: 'An unexpected error occurred while processing your request'
+              details:
+                reason: 'Network timeout'
+                type: 'Error'
+            timestamp: '2025-10-27T12:00:00Z'
+            path: /api/historic_observations
+
+    NotFound:
+      description: Endpoint not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: ENDPOINT_NOT_FOUND
+              message: 'The requested endpoint does not exist'
+              details:
+                requestedPath: /api/unknown
+                availableVersions:
+                  - v1
+                suggestedEndpoint: /api
+            timestamp: '2025-10-27T12:00:00Z'
+            path: /api/unknown
