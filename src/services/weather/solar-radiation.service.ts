@@ -272,6 +272,10 @@ export class SolarRadiationService {
   /**
    * Check if the data contains valid daytime radiation values
    * Himawari data is considered valid if it shows non-zero values during typical daylight hours
+   *
+   * IMPORTANT: In early morning hours (before 6 AM), we may not have daytime data yet.
+   * In this case, we should accept the data if it has valid structure, even if no daytime
+   * radiation is present yet. This prevents early morning failures.
    */
   private static hasValidDaytimeData(data?: {
     shortwave_radiation_instant?: number[];
@@ -281,6 +285,21 @@ export class SolarRadiationService {
   }): boolean {
     if (!data || !data.time || !data.shortwave_radiation_instant) {
       return false;
+    }
+
+    // Check if we have ANY valid data structure
+    if (data.time.length === 0 || data.shortwave_radiation_instant.length === 0) {
+      return false;
+    }
+
+    // Find the latest hour in the dataset
+    const latestHour = Math.max(...data.time.map(timeStr => new Date(timeStr).getHours()));
+
+    // If the latest hour is before 6 AM (early morning), accept the data as valid
+    // because daylight data won't exist yet
+    if (latestHour < 6) {
+      console.log(`[SolarRadiation] Early morning detected (latest hour: ${latestHour}), accepting data as valid`);
+      return true;
     }
 
     // Check for non-zero radiation values during daylight hours (6 AM - 6 PM)
