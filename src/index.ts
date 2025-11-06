@@ -981,6 +981,85 @@ function getMaxInRange(data: any[], startTime: string, endTime: string) {
   };
 }
 
+/**
+ * Interpolation fallback: When no data exists in the requested time range,
+ * find the closest observations before and after the range, and return the one
+ * with higher WBGT (conservative approach for athlete safety).
+ */
+function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: string) {
+  console.log('[INTERPOLATE] Input - start:', startTime, 'end:', endTime);
+  console.log('[INTERPOLATE] Data count:', data.length);
+
+  if (data.length === 0) {
+    console.log('[INTERPOLATE] No data available for interpolation');
+    return null;
+  }
+
+  // Convert ISO timestamps to comparable format
+  const convertISOToLocalFormat = (isoStr: string): string => {
+    const [datePart, timePart] = isoStr.split('T');
+    const [year, month, day] = datePart.split('-');
+    return `${day}/${month}/${year}, ${timePart}`;
+  };
+
+  const startFormatted = convertISOToLocalFormat(startTime);
+  const endFormatted = convertISOToLocalFormat(endTime);
+
+  // Find closest observation before start_time
+  let closestBefore: any = null;
+  let closestAfter: any = null;
+
+  for (const obs of data) {
+    if (obs.timestamp < startFormatted) {
+      // This observation is before the range
+      if (!closestBefore || obs.timestamp > closestBefore.timestamp) {
+        closestBefore = obs;
+      }
+    } else if (obs.timestamp > endFormatted) {
+      // This observation is after the range
+      if (!closestAfter || obs.timestamp < closestAfter.timestamp) {
+        closestAfter = obs;
+      }
+    }
+  }
+
+  console.log('[INTERPOLATE] Closest before:', closestBefore?.timestamp, 'WBGT:', closestBefore?.wbgt);
+  console.log('[INTERPOLATE] Closest after:', closestAfter?.timestamp, 'WBGT:', closestAfter?.wbgt);
+
+  // If we have both, pick the one with higher WBGT
+  if (closestBefore && closestAfter) {
+    const result = closestBefore.wbgt >= closestAfter.wbgt ? closestBefore : closestAfter;
+    console.log('[INTERPOLATE] Selected observation with higher WBGT:', result.timestamp, 'WBGT:', result.wbgt);
+    return {
+      ...result,
+      timestamp: `${result.timestamp} (interpolated from range ${startTime} to ${endTime})`,
+      interpolated: true
+    };
+  }
+
+  // If we only have one, use that
+  if (closestBefore) {
+    console.log('[INTERPOLATE] Using only available observation before range');
+    return {
+      ...closestBefore,
+      timestamp: `${closestBefore.timestamp} (interpolated from range ${startTime} to ${endTime})`,
+      interpolated: true
+    };
+  }
+
+  if (closestAfter) {
+    console.log('[INTERPOLATE] Using only available observation after range');
+    return {
+      ...closestAfter,
+      timestamp: `${closestAfter.timestamp} (interpolated from range ${startTime} to ${endTime})`,
+      interpolated: true
+    };
+  }
+
+  console.log('[INTERPOLATE] No suitable observations found for interpolation');
+  return null;
+}
+
 function getHistoricalAtTime(weatherData: any, targetTime: string) {
   const times = weatherData?.hourly?.time || [];
   const temps = weatherData?.hourly?.temperature_2m || [];
@@ -1448,7 +1527,15 @@ function parseObservationsKong(srData: SRData, bomData: BOMData, startTime?: str
   // Apply time range filter if specified
   if (startTime && endTime) {
     const maxInRange = getMaxInRange(results, startTime, endTime);
-    return maxInRange ? [maxInRange] : [];
+
+    // If no exact data in range, try interpolation fallback
+    if (!maxInRange) {
+      console.log('[PARSE OBS] No data in exact range, attempting interpolation');
+      const interpolated = getInterpolatedMaxInRange(results, startTime, endTime);
+      return interpolated ? [interpolated] : [];
+    }
+
+    return [maxInRange];
   }
 
   return results;
@@ -1550,18 +1637,32 @@ export class WBGTServerMCP extends McpAgent {
       "get_current_wbgt",
       "Get current WBGT (Wet Bulb Globe Temperature) conditions in Sydney",
       async () => {
-        const data = await fetchObservations();
-        const observations = parseObservations(data);
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: observations[0] || null,
-              note: "Current WBGT conditions in Sydney"
-            }, null, 2)
-          }]
-        };
+        try {
+          const data = await fetchObservations();
+          const observations = parseObservations(data);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: observations[0] || null,
+                note: "Current WBGT conditions in Sydney"
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_current_wbgt error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch current WBGT data',
+                note: "Error occurred while fetching current WBGT conditions"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
@@ -1570,19 +1671,33 @@ export class WBGTServerMCP extends McpAgent {
       "get_wbgt_forecast",
       "Get 72-hour WBGT forecast for Sydney including solar radiation, cloud cover, UV index, and air quality",
       async () => {
-        const { srData, aqData, bomData } = await fetchForecast();
-        const forecast = parseForecastData(srData, aqData, bomData);
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: forecast,
-              count: forecast.length,
-              note: "WBGT forecast (72 hours)"
-            }, null, 2)
-          }]
-        };
+        try {
+          const { srData, aqData, bomData } = await fetchForecast();
+          const forecast = parseForecastData(srData, aqData, bomData);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: forecast,
+                count: forecast.length,
+                note: "WBGT forecast (72 hours)"
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_wbgt_forecast error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch WBGT forecast',
+                note: "Error occurred while fetching WBGT forecast"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
@@ -1601,25 +1716,44 @@ export class WBGTServerMCP extends McpAgent {
       "Get past 72 hours of WBGT observations for Sydney using Kong method. Can also calculate maximum WBGT during a specific activity time window",
       observationsSchema,
       async (params: any) => {
-        const { start_time, end_time } = params;
-        const data = await fetchObservations();
-        const observations = parseObservationsKong(data.srData!, data.bomData!, start_time, end_time);
+        try {
+          const { start_time, end_time } = params;
+          const data = await fetchObservations();
 
-        const note = start_time
-          ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
-          : "Past 72-hour WBGT observations (Kong method)";
+          if (!data.srData || !data.bomData) {
+            throw new Error('Missing weather data from API sources');
+          }
 
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: observations,
-              count: observations.length,
-              note
-            }, null, 2)
-          }]
-        };
+          const observations = parseObservationsKong(data.srData, data.bomData, start_time, end_time);
+
+          const note = start_time
+            ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
+            : "Past 72-hour WBGT observations (Kong method)";
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: observations,
+                count: observations.length,
+                note
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_observations error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch observations',
+                note: "Error occurred while fetching WBGT observations"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
