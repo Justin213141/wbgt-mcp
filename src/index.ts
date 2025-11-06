@@ -1550,18 +1550,32 @@ export class WBGTServerMCP extends McpAgent {
       "get_current_wbgt",
       "Get current WBGT (Wet Bulb Globe Temperature) conditions in Sydney",
       async () => {
-        const data = await fetchObservations();
-        const observations = parseObservations(data);
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: observations[0] || null,
-              note: "Current WBGT conditions in Sydney"
-            }, null, 2)
-          }]
-        };
+        try {
+          const data = await fetchObservations();
+          const observations = parseObservations(data);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: observations[0] || null,
+                note: "Current WBGT conditions in Sydney"
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_current_wbgt error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch current WBGT data',
+                note: "Error occurred while fetching current WBGT conditions"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
@@ -1570,19 +1584,33 @@ export class WBGTServerMCP extends McpAgent {
       "get_wbgt_forecast",
       "Get 72-hour WBGT forecast for Sydney including solar radiation, cloud cover, UV index, and air quality",
       async () => {
-        const { srData, aqData, bomData } = await fetchForecast();
-        const forecast = parseForecastData(srData, aqData, bomData);
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: forecast,
-              count: forecast.length,
-              note: "WBGT forecast (72 hours)"
-            }, null, 2)
-          }]
-        };
+        try {
+          const { srData, aqData, bomData } = await fetchForecast();
+          const forecast = parseForecastData(srData, aqData, bomData);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: forecast,
+                count: forecast.length,
+                note: "WBGT forecast (72 hours)"
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_wbgt_forecast error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch WBGT forecast',
+                note: "Error occurred while fetching WBGT forecast"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
@@ -1601,25 +1629,44 @@ export class WBGTServerMCP extends McpAgent {
       "Get past 72 hours of WBGT observations for Sydney using Kong method. Can also calculate maximum WBGT during a specific activity time window",
       observationsSchema,
       async (params: any) => {
-        const { start_time, end_time } = params;
-        const data = await fetchObservations();
-        const observations = parseObservationsKong(data.srData!, data.bomData!, start_time, end_time);
+        try {
+          const { start_time, end_time } = params;
+          const data = await fetchObservations();
 
-        const note = start_time
-          ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
-          : "Past 72-hour WBGT observations (Kong method)";
+          if (!data.srData || !data.bomData) {
+            throw new Error('Missing weather data from API sources');
+          }
 
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              data: observations,
-              count: observations.length,
-              note
-            }, null, 2)
-          }]
-        };
+          const observations = parseObservationsKong(data.srData, data.bomData, start_time, end_time);
+
+          const note = start_time
+            ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
+            : "Past 72-hour WBGT observations (Kong method)";
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                data: observations,
+                count: observations.length,
+                note
+              }, null, 2)
+            }]
+          };
+        } catch (error: any) {
+          console.error('[MCP Tool] get_observations error:', error);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: error?.message || 'Failed to fetch observations',
+                note: "Error occurred while fetching WBGT observations"
+              }, null, 2)
+            }]
+          };
+        }
       }
     );
 
