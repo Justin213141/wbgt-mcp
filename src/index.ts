@@ -640,7 +640,8 @@ export function calculateKongWBGTPipeline(
 
   const ea_hPa = ea_actual / 100;
   const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const fdir = SRdirect_valid > 0 ? SRdirect_valid / (SRdirect_valid + SRdiffuse_valid) : 0;
+  const totalSR = SRdirect_valid + SRdiffuse_valid;
+  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
 
   // Step 3: Radiation components
   const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
@@ -750,7 +751,8 @@ export function calculateKongWBGTPipelineJST(
 
   const ea_hPa = ea_actual / 100;
   const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const fdir = SRdirect_valid > 0 ? SRdirect_valid / (SRdirect_valid + SRdiffuse_valid) : 0;
+  const totalSR = SRdirect_valid + SRdiffuse_valid;
+  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
 
   // Step 3: Radiation components
   const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
@@ -890,8 +892,8 @@ async function fetchObservations(startDate?: string, endDate?: string): Promise<
 async function fetchForecast(): Promise<{ srData: SRData; aqData: AQData; bomData: BOMData }> {
   // TODO: Re-enable caching after debugging
   return await (async () => {
-      const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=UTC&forecast_days=3`;
-      const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=us_aqi,pm10,pm2_5&timezone=UTC&forecast_days=3`;
+      const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&forecast_days=3`;
+      const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=us_aqi,pm10,pm2_5&timezone=Australia%2FSydney&forecast_days=3`;
       const bomUrl = `https://api.weather.bom.gov.au/v1/locations/${BOM_LOCATION_ID}/forecasts/hourly`;
 
       console.log('[FETCH] Starting forecast fetch...');
@@ -1561,13 +1563,35 @@ function buildAirQualityMaps(aqData: AQData): { aqiMap: Record<string, number>; 
   return { aqiMap, pm25Map, pm10Map };
 }
 
+// Helper function to convert UTC timestamp to Sydney timezone for key matching
+function convertUtcToSydneyKey(utcTimestamp: string): string {
+  // BOM returns UTC timestamps like "2025-11-08T02:00:00Z"
+  // Open-Meteo with timezone=Australia/Sydney returns like "2025-11-08T13:00"
+  // We need to convert UTC to Sydney time for the hourKey lookup
+  const date = new Date(utcTimestamp);
+  const sydneyTime = date.toLocaleString('en-CA', {
+    timeZone: 'Australia/Sydney',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  // Convert "2025-11-08, 13:00" to "2025-11-08T13"
+  const [datePart, timePart] = sydneyTime.split(', ');
+  const hourPart = timePart.substring(0, 2);
+  return `${datePart}T${hourPart}`;
+}
+
 // Helper function to process single forecast with Kong WBGT
 function processForecast(forecast: any, timestamp: string, omMap: Record<string, any>, cloudMap: Record<string, number>, uvMap: Record<string, number>): any | null {
-  const hourKey = timestamp.substring(0, 13);
+  // Convert BOM's UTC timestamp to Sydney timezone for key matching
+  const hourKey = convertUtcToSydneyKey(timestamp);
   const omEntry = omMap[hourKey];
 
   if (!omEntry) {
-    console.log(`[PARSE] Warning: No Open-Meteo data for ${hourKey}`);
+    console.log(`[PARSE] Warning: No Open-Meteo data for UTC ${timestamp} -> Sydney ${hourKey}`);
     return null;
   }
 
@@ -1579,12 +1603,16 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
   const wbgt_esi = calculateWBGT(ta, rh, omData.sr_instant || 0);
   const at = calculateAT(ta, rh, ws_kmh, omData.sr_instant || 0);
 
+  // Convert UTC timestamp to Sydney timezone format for Kong WBGT calculation
+  // BOM provides UTC like "2025-11-08T02:00:00Z", but Kong needs Sydney local time like "2025-11-08T13:00"
+  const sydneyTimestamp = hourKey + ':00';  // hourKey is already in Sydney timezone from convertUtcToSydneyKey
+
   let wbgt_kong: number | null = null;
   try {
     const kongCalc = calculateKongWBGTPipeline(
       ta, omData.wet_bulb || 0, rh, omData.pressure || 0, omData.wind_speed || 0,
       omData.sr_instant || 0, omData.sr_direct || 0, omData.sr_diffuse || 0,
-      SYDNEY_LAT, SYDNEY_LON, timestamp
+      SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
     );
     wbgt_kong = kongCalc.kong_wbgt;
   } catch (error) {

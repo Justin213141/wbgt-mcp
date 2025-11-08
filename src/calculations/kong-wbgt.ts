@@ -148,7 +148,8 @@ export function calculateKongWBGTPipelineByTimezone(
 
   const ea_hPa = ea_actual / 100;
   const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const fdir = SRdirect_valid > 0 ? SRdirect_valid / (SRdirect_valid + SRdiffuse_valid) : 0;
+  const totalSR = SRdirect_valid + SRdiffuse_valid;
+  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
 
   // Step 3: Radiation components
   const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
@@ -261,7 +262,8 @@ export function calculateKongWBGTPipeline(
 
   const ea_hPa = ea_actual / 100;
   const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const fdir = SRdirect_valid > 0 ? SRdirect_valid / (SRdirect_valid + SRdiffuse_valid) : 0;
+  const totalSR = SRdirect_valid + SRdiffuse_valid;
+  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
 
   // Step 3: Radiation components
   const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
@@ -374,7 +376,8 @@ export function calculateKongWBGTPipelineJST(
 
   const ea_hPa = ea_actual / 100;
   const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const fdir = SRdirect_valid > 0 ? SRdirect_valid / (SRdirect_valid + SRdiffuse_valid) : 0;
+  const totalSR = SRdirect_valid + SRdiffuse_valid;
+  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
 
   // Step 3: Radiation components
   const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
