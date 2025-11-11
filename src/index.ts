@@ -876,20 +876,32 @@ async function fetchObservations(startDate?: string, endDate?: string): Promise<
 
   console.log('[FETCH OBS] Fetching from BOM and Open-Meteo...');
   const [srResponse, bomResponse] = await Promise.all([
-    fetch(srUrl),
+    fetch(srUrl, {
+      cf: {
+        cacheTtl: 300, // 5 minutes cache
+        cacheEverything: true
+      }
+    }),
     fetch(bomUrl)
   ]);
 
   console.log('[FETCH OBS] Response statuses - SR:', srResponse.status, 'BOM:', bomResponse.status);
 
+  if (srResponse.status !== 200) {
+    console.log('[FETCH OBS] SR ERROR - Status:', srResponse.status);
+  }
+  if (bomResponse.status !== 200) {
+    console.log('[FETCH OBS] BOM ERROR - Status:', bomResponse.status);
+  }
+
   return {
     type: 'recent',
-    srData: await srResponse.json() as SRData,
-    bomData: await bomResponse.json() as BOMData
+    srData: srResponse.status === 200 ? await srResponse.json() as SRData : null,
+    bomData: bomResponse.status === 200 ? await bomResponse.json() as BOMData : null
   };
 }
 
-async function fetchForecast(): Promise<{ srData: SRData; aqData: AQData; bomData: BOMData }> {
+async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData | null; bomData: BOMData | null; responseStatuses: { sr: number; aq: number; bom: number } }> {
   // TODO: Re-enable caching after debugging
   return await (async () => {
       const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&forecast_days=3`;
@@ -898,18 +910,39 @@ async function fetchForecast(): Promise<{ srData: SRData; aqData: AQData; bomDat
 
       console.log('[FETCH] Starting forecast fetch...');
       const [srResponse, aqResponse, bomResponse] = await Promise.all([
-        fetch(srUrl),
-        fetch(aqUrl),
+        fetch(srUrl, {
+          cf: {
+            cacheTtl: 300, // 5 minutes cache
+            cacheEverything: true
+          }
+        }),
+        fetch(aqUrl, {
+          cf: {
+            cacheTtl: 300,
+            cacheEverything: true
+          }
+        }),
         fetch(bomUrl)
       ]);
 
-      console.log('[FETCH] SR response status:', srResponse.status);
-      console.log('[FETCH] AQ response status:', aqResponse.status);
-      console.log('[FETCH] BOM response status:', bomResponse.status);
+      let srData: SRData | null = null;
+      let aqData: AQData | null = null;
+      let bomData: BOMData | null = null;
 
-      const srData = await srResponse.json() as SRData;
-      const aqData = await aqResponse.json() as AQData;
-      const bomData = await bomResponse.json() as BOMData;
+      if (srResponse.status === 200) {
+        srData = await srResponse.json() as SRData;
+      } else {
+        const errorText = await srResponse.text();
+        console.log('[FETCH] SR ERROR:', srResponse.status, errorText.substring(0, 200));
+      }
+
+      if (aqResponse.status === 200) {
+        aqData = await aqResponse.json() as AQData;
+      }
+
+      if (bomResponse.status === 200) {
+        bomData = await bomResponse.json() as BOMData;
+      }
 
       console.log('[FETCH] srData.hourly exists?', !!srData?.hourly);
       console.log('[FETCH] srData.hourly.time length:', srData?.hourly?.time?.length || 0);
@@ -924,10 +957,14 @@ async function fetchForecast(): Promise<{ srData: SRData; aqData: AQData; bomDat
       return {
         srData,
         aqData,
-        bomData
+        bomData,
+        responseStatuses: {
+          sr: srResponse.status,
+          aq: aqResponse.status,
+          bom: bomResponse.status
+        }
       };
-    }
-  )();
+    })();
 }
 
 // --- Helper functions for max values ---
@@ -1425,7 +1462,7 @@ function parseObservations(data: ObservationsResponse, startTime?: string, endTi
 }
 
 // Helper function to build maps from Open-Meteo solar radiation data
-function buildOpenMeteoMaps(srData: SRData): { omMap: Record<string, any>; cloudMap: Record<string, number>; uvMap: Record<string, number> } {
+function buildOpenMeteoMaps(srData: SRData | null): { omMap: Record<string, any>; cloudMap: Record<string, number>; uvMap: Record<string, number> } {
   const omMap: Record<string, { idx: number; omData: any }> = {};
   const cloudMap: Record<string, number> = {};
   const uvMap: Record<string, number> = {};
@@ -1466,32 +1503,38 @@ function buildOpenMeteoMaps(srData: SRData): { omMap: Record<string, any>; cloud
 // Helper function to process single BOM observation with Kong WBGT
 function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<string, any>, cloudMap: Record<string, number>, uvMap: Record<string, number>, idx: number): any | null {
   const hourKey = timestamp.substring(0, 13);
-  const omEntry = omMap[hourKey];
+  const omEntry = findOpenMeteoEntry(hourKey, omMap);
 
-  if (!omEntry) {
+  if (!omMap || Object.keys(omMap).length === 0) {
+    console.log(`[PARSE OBS] obs ${idx}: No Open-Meteo data available, using BOM only`);
+    // Continue with BOM-only data
+  } else if (!omEntry) {
     console.log(`[PARSE OBS] SKIPPING obs ${idx}: No Open-Meteo data for ${hourKey}`);
     return null;
   }
 
-  const omData = omEntry.omData;
-  const ta = obs.temp || omData.temp || 0;
-  const rh = obs.relative_humidity || omData.humidity || 0;
-  const ws_kmh = obs.wind?.speed_kilometre || (omData.wind_speed * 3.6) || 0;
+  const omData = omEntry?.omData;
+  const ta = obs.temp || omData?.temp || 0;
+  const rh = obs.relative_humidity || omData?.humidity || 0;
+  const ws_kmh = obs.wind?.speed_kilometre || (omData?.wind_speed * 3.6) || 0;
+  const solar_radiation = omData?.sr_instant || 0;
 
   const e = calculateVaporPressure(ta, rh);
-  const wbgt_esi = calculateWBGT(ta, rh, omData.sr_instant || 0);
-  const at = calculateAT(ta, rh, ws_kmh, omData.sr_instant || 0);
+  const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
+  const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
 
   let wbgt_kong: number | null = null;
-  try {
-    const kongCalc = calculateKongWBGTPipeline(
-      ta, omData.wet_bulb || 0, rh, omData.pressure || 0, omData.wind_speed || 0,
-      omData.sr_instant || 0, omData.sr_direct || 0, omData.sr_diffuse || 0,
-      SYDNEY_LAT, SYDNEY_LON, timestamp
-    );
-    wbgt_kong = kongCalc.kong_wbgt;
-  } catch (error) {
-    console.error(`[PARSE OBS] Error calculating Kong WBGT for ${timestamp}:`, error);
+  if (omData) {
+    try {
+      const kongCalc = calculateKongWBGTPipeline(
+        ta, omData.wet_bulb || 0, rh, omData.pressure || 0, omData.wind_speed || 0,
+        solar_radiation, omData.sr_direct || 0, omData.sr_diffuse || 0,
+        SYDNEY_LAT, SYDNEY_LON, timestamp
+      );
+      wbgt_kong = kongCalc.kong_wbgt;
+    } catch (error) {
+      console.error(`[PARSE OBS] Error calculating Kong WBGT for ${timestamp}:`, error);
+    }
   }
 
   const [datePart, timePart] = timestamp.split('T');
@@ -1512,7 +1555,7 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   };
 }
 
-function parseObservationsKong(srData: SRData, bomData: BOMData, startTime?: string, endTime?: string): any[] {
+function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, startTime?: string, endTime?: string): any[] {
   console.log('[PARSE OBS] Called with startTime:', startTime, 'endTime:', endTime);
   const bomObs = bomData?.observations?.data || [];
   const { omMap, cloudMap, uvMap } = buildOpenMeteoMaps(srData);
@@ -1584,39 +1627,62 @@ function convertUtcToSydneyKey(utcTimestamp: string): string {
   return `${datePart}T${hourPart}`;
 }
 
+// Helper function to find matching or fallback Open-Meteo data for Sydney hour
+function findOpenMeteoEntry(sydneyHourKey: string, omMap: Record<string, any>): any | null {
+  // If no Open-Meteo data available, return null to trigger fallback behavior
+  if (!omMap || Object.keys(omMap).length === 0) {
+    console.log(`[PARSE] No Open-Meteo data available, using fallback`);
+    return null;
+  }
+
+  // Try exact match first
+  if (omMap[sydneyHourKey]) {
+    return omMap[sydneyHourKey];
+  }
+
+  // If no exact match, try to find the closest previous hour (fallback for timezone mismatches)
+  const hourKeyNum = parseInt(sydneyHourKey.split('T')[1]);
+  let fallbackHour = hourKeyNum - 1;
+
+  while (fallbackHour >= 0) {
+    const fallbackKey = `${sydneyHourKey.split('T')[0]}T${fallbackHour.toString().padStart(2, '0')}`;
+    if (omMap[fallbackKey]) {
+      console.log(`[PARSE] Using fallback: ${sydneyHourKey} -> ${fallbackKey}`);
+      return omMap[fallbackKey];
+    }
+    fallbackHour--;
+  }
+
+  return null;
+}
+
 // Helper function to process single forecast with Kong WBGT
 function processForecast(forecast: any, timestamp: string, omMap: Record<string, any>, cloudMap: Record<string, number>, uvMap: Record<string, number>): any | null {
   // Convert BOM's UTC timestamp to Sydney timezone for key matching
   const hourKey = convertUtcToSydneyKey(timestamp);
-  const omEntry = omMap[hourKey];
+  const omEntry = findOpenMeteoEntry(hourKey, omMap);
 
-  if (!omEntry) {
-    console.log(`[PARSE] Warning: No Open-Meteo data for UTC ${timestamp} -> Sydney ${hourKey}`);
-    return null;
-  }
+  const ta = forecast.temp || omEntry?.omData?.temp || 0;
+  const rh = forecast.relative_humidity || omEntry?.omData?.humidity || 0;
+  const ws_kmh = forecast.wind?.speed_kilometre || (omEntry?.omData?.wind_speed * 3.6) || 0;
+  const solar_radiation = omEntry?.omData?.sr_instant || 0;
 
-  const omData = omEntry.omData;
-  const ta = forecast.temp || omData.temp || 0;
-  const rh = forecast.relative_humidity || omData.humidity || 0;
-  const ws_kmh = forecast.wind?.speed_kilometre || (omData.wind_speed * 3.6) || 0;
-
-  const wbgt_esi = calculateWBGT(ta, rh, omData.sr_instant || 0);
-  const at = calculateAT(ta, rh, ws_kmh, omData.sr_instant || 0);
-
-  // Convert UTC timestamp to Sydney timezone format for Kong WBGT calculation
-  // BOM provides UTC like "2025-11-08T02:00:00Z", but Kong needs Sydney local time like "2025-11-08T13:00"
-  const sydneyTimestamp = hourKey + ':00';  // hourKey is already in Sydney timezone from convertUtcToSydneyKey
+  const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
+  const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
 
   let wbgt_kong: number | null = null;
-  try {
-    const kongCalc = calculateKongWBGTPipeline(
-      ta, omData.wet_bulb || 0, rh, omData.pressure || 0, omData.wind_speed || 0,
-      omData.sr_instant || 0, omData.sr_direct || 0, omData.sr_diffuse || 0,
-      SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
-    );
-    wbgt_kong = kongCalc.kong_wbgt;
-  } catch (error) {
-    console.error(`[PARSE] Error calculating Kong WBGT for ${timestamp}:`, error);
+  if (omEntry?.omData) {
+    try {
+      const sydneyTimestamp = hourKey + ':00';
+      const kongCalc = calculateKongWBGTPipeline(
+        ta, omEntry.omData.wet_bulb || 0, rh, omEntry.omData.pressure || 0, omEntry.omData.wind_speed || 0,
+        solar_radiation, omEntry.omData.sr_direct || 0, omEntry.omData.sr_diffuse || 0,
+        SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
+      );
+      wbgt_kong = kongCalc.kong_wbgt;
+    } catch (error) {
+      console.error(`[PARSE] Error calculating Kong WBGT for ${timestamp}:`, error);
+    }
   }
 
   const localTimestamp = new Date(timestamp).toLocaleString('en-AU', {
@@ -1629,19 +1695,20 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     localTimestamp,
     temperature: parseFloat(ta.toFixed(1)),
     humidity: Math.round(rh),
-    dew_point: parseFloat((forecast.dewpoint || omData.dewpoint || 0).toFixed(1)),
-    wind_speed_ms: parseFloat((omData.wind_speed || 0).toFixed(2)),
-    solar_radiation: parseFloat((omData.sr_instant || 0).toFixed(1)),
+    dew_point: parseFloat((forecast.dewpoint || omEntry?.omData?.dewpoint || 0).toFixed(1)),
+    wind_speed_ms: parseFloat((omEntry?.omData?.wind_speed || ws_kmh/3.6 || 0).toFixed(2)),
+    solar_radiation: parseFloat(solar_radiation.toFixed(1)),
     cloud_cover: parseFloat((cloudMap[hourKey] || 0).toFixed(1)),
     uv_index: parseFloat((uvMap[hourKey] || 0).toFixed(1)),
     wbgt: wbgt_kong !== null ? parseFloat(wbgt_kong.toFixed(1)) : parseFloat(wbgt_esi.toFixed(1)),
     esi: parseFloat(wbgt_esi.toFixed(1)),
     apparent_temp: parseFloat(at.toFixed(1)),
-    rain_chance: forecast.rain?.chance || 0
+    rain_chance: forecast.rain?.chance || 0,
+    source: omEntry ? 'hybrid' : 'bom_only'
   };
 }
 
-function parseForecastData(srData: SRData, aqData: AQData, bomData: BOMData): any[] {
+function parseForecastData(srData: SRData | null, aqData: AQData | null, bomData: BOMData | null): any[] {
   const forecasts = bomData?.data || [];
   const { omMap, cloudMap, uvMap } = buildOpenMeteoMaps(srData);
 
@@ -1909,8 +1976,9 @@ async function handleGetCurrent(corsHeaders: Record<string, string>): Promise<Re
 
 // Handler: GET /api/forecast
 async function handleGetForecast(corsHeaders: Record<string, string>): Promise<Response> {
-  const { srData, aqData, bomData } = await fetchForecast();
-  const forecast = parseForecastData(srData, aqData, bomData);
+  const result = await fetchForecast();
+  const forecast = parseForecastData(result.srData, result.aqData, result.bomData);
+
   return jsonResponse({
     success: true,
     data: forecast,
