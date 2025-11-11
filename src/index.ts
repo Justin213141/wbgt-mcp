@@ -1517,7 +1517,14 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   const ta = obs.temp || omData?.temp || 0;
   const rh = obs.relative_humidity || omData?.humidity || 0;
   const ws_kmh = obs.wind?.speed_kilometre || (omData?.wind_speed * 3.6) || 0;
-  const solar_radiation = omData?.sr_instant || 0;
+  let solar_radiation = omData?.sr_instant || 0;
+
+  // If no Open-Meteo data, estimate solar radiation based on time of day
+  if (!omData) {
+    const hour = parseInt(hourKey.split('T')[1]);
+    solar_radiation = estimateSolarRadiation(hour);
+    console.log(`[PARSE OBS] Estimated solar radiation ${solar_radiation} W/m² for hour ${hour}`);
+  }
 
   const e = calculateVaporPressure(ta, rh);
   const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
@@ -1656,6 +1663,33 @@ function findOpenMeteoEntry(sydneyHourKey: string, omMap: Record<string, any>): 
   return null;
 }
 
+// Helper function to estimate solar radiation when Open-Meteo data is unavailable
+function estimateSolarRadiation(hour: number): number {
+  // Simple solar radiation estimation based on time of day for Sydney
+  // Returns approximate solar radiation in W/m²
+
+  if (hour < 5 || hour > 19) {
+    return 0; // Night time
+  }
+
+  // Peak solar radiation around 13:00 (1 PM)
+  if (hour >= 12 && hour <= 14) {
+    return 1000 + (hour === 13 ? 100 : 0); // Peak: 1100 at 1 PM
+  }
+
+  // Morning ramp up
+  if (hour >= 5 && hour <= 11) {
+    return 50 + ((hour - 5) * 150); // Gradual increase
+  }
+
+  // Evening ramp down
+  if (hour >= 15 && hour <= 19) {
+    return 1000 - ((hour - 14) * 200); // Gradual decrease
+  }
+
+  return 0;
+}
+
 // Helper function to process single forecast with Kong WBGT
 function processForecast(forecast: any, timestamp: string, omMap: Record<string, any>, cloudMap: Record<string, number>, uvMap: Record<string, number>): any | null {
   // Convert BOM's UTC timestamp to Sydney timezone for key matching
@@ -1665,7 +1699,14 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
   const ta = forecast.temp || omEntry?.omData?.temp || 0;
   const rh = forecast.relative_humidity || omEntry?.omData?.humidity || 0;
   const ws_kmh = forecast.wind?.speed_kilometre || (omEntry?.omData?.wind_speed * 3.6) || 0;
-  const solar_radiation = omEntry?.omData?.sr_instant || 0;
+  let solar_radiation = omEntry?.omData?.sr_instant || 0;
+
+  // If no Open-Meteo data, estimate solar radiation based on time of day
+  if (!omEntry && hourKey) {
+    const hour = parseInt(hourKey.split('T')[1]);
+    solar_radiation = estimateSolarRadiation(hour);
+    console.log(`[PARSE] Estimated solar radiation ${solar_radiation} W/m² for hour ${hour}`);
+  }
 
   const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
   const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
@@ -1704,7 +1745,7 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     esi: parseFloat(wbgt_esi.toFixed(1)),
     apparent_temp: parseFloat(at.toFixed(1)),
     rain_chance: forecast.rain?.chance || 0,
-    source: omEntry ? 'hybrid' : 'bom_only'
+    source: omEntry ? 'hybrid' : (solar_radiation > 0 ? 'bom_plus_estimated' : 'bom_only')
   };
 }
 
