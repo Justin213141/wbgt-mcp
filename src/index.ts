@@ -150,690 +150,10 @@ const WICK_ALBEDO = 0.4;
 // Surface constants
 const SURFACE_ALBEDO = 0.45;
 
-// --- Calculation functions ---
-export function calculateVaporPressure(ta: number, rh: number): number {
-  return (rh / 100) * 6.105 * Math.exp((17.27 * ta) / (237.7 + ta));
-}
 
-// --- Kong WBGT Calculation Functions ---
-
-/**
- * Calculate solar zenith angle using astronomical formulas
- * @param lat Latitude in degrees
- * @param lon Longitude in degrees
- * @param timestamp ISO timestamp (in Sydney local time YYYYMMDDTHH:MM format)
- * @returns Solar zenith angle in degrees
- */
-export function calculateSolarZenithAngle(lat: number, lon: number, timestamp: string): number {
-  // Parse Sydney local time components - timestamps from Archive API are in local time format
-  // Format: "2025-10-11T08:00" (Sydney local time, NOT UTC)
-  const [datePart, timePart] = timestamp.split('T');
-  const [year, month, day] = datePart.split('-').map(x => parseInt(x, 10));
-  const [hour, minute] = timePart.split(':').map(x => parseInt(x, 10));
-
-  // Determine Sydney DST status
-  // Sydney uses EDT (UTC+11) from first Sunday in October to first Sunday in April
-  // UTC+10 (EST) from first Sunday in April to first Sunday in October
-  // For 2025: EDT is Oct 5 - Apr 6, so Oct 11 is EDT (UTC+11)
-  const isDST = month >= 10 || month <= 3;
-  const sydneyUTCOffset = isDST ? 11 : 10;
-
-  // Convert Sydney local time to UTC
-  // Sydney local = UTC + offset, so UTC = Sydney local - offset (in hours)
-  let utcHour = hour - sydneyUTCOffset;
-  let utcDay = day;
-  let utcMonth = month;
-  let utcYear = year;
-
-  // Handle day rollover
-  if (utcHour < 0) {
-    utcHour += 24;
-    utcDay -= 1;
-    if (utcDay < 1) {
-      utcMonth -= 1;
-      if (utcMonth < 1) {
-        utcMonth = 12;
-        utcYear -= 1;
-      }
-      // Days in previous month
-      const isLeapYear = (utcYear % 4 === 0 && utcYear % 100 !== 0) || utcYear % 400 === 0;
-      const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      utcDay = daysInMonth[utcMonth - 1];
-    }
-  }
-
-  // Create UTC date
-  const utcDate = new Date(Date.UTC(utcYear, utcMonth - 1, utcDay, utcHour, minute));
-
-  // Calculate day of year for UTC date
-  const jan1UTC = new Date(Date.UTC(utcYear, 0, 1));
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const dayOfYear = Math.ceil((utcDate.getTime() - jan1UTC.getTime()) / msPerDay);
-
-  // Decimal hour in UTC
-  const decimalHour = utcDate.getUTCHours() + utcDate.getUTCMinutes() / 60;
-
-  // Solar declination (degrees) - using Cooper's equation
-  const B = (360 / 365.25) * (dayOfYear - 81) * Math.PI / 180;
-  const decl = 23.45 * Math.sin(B);
-
-  // Equation of Time (minutes) - corrects for Earth's elliptical orbit
-  const EoT = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
-
-  // Hour angle (degrees) - 15 degrees per hour from solar noon
-  const solarTime = decimalHour + lon / 15 + EoT / 60; // Local solar time with EoT correction
-  const hourAngle = 15 * (solarTime - 12);
-
-  // Convert to radians
-  const latRad = lat * Math.PI / 180;
-  const declRad = decl * Math.PI / 180;
-  const hourRad = hourAngle * Math.PI / 180;
-
-  // Solar elevation angle
-  const sinElev = Math.sin(latRad) * Math.sin(declRad) +
-                  Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourRad);
-  const elevRad = Math.asin(Math.max(-1, Math.min(1, sinElev)));
-
-  // Solar zenith angle
-  const zenithRad = Math.PI / 2 - elevRad;
-  const zenithDeg = zenithRad * 180 / Math.PI;
-
-  return Math.max(0, Math.min(180, zenithDeg));
-}
-
-/**
- * Calculate solar zenith angle using astronomical formulas (JST/Tokyo timezone)
- * @param lat Latitude in degrees
- * @param lon Longitude in degrees
- * @param timestamp ISO timestamp (in Japan Standard Time YYYYMMDDTHH:MM format)
- * @returns Solar zenith angle in degrees
- */
-export function calculateSolarZenithAngleJST(lat: number, lon: number, timestamp: string): number {
-  // Parse JST local time components - timestamps from Archive API with Asia/Tokyo timezone
-  // Format: "2025-10-11T08:00" (JST local time, NOT UTC)
-  const [datePart, timePart] = timestamp.split('T');
-  const [year, month, day] = datePart.split('-').map(x => parseInt(x, 10));
-  const [hour, minute] = timePart.split(':').map(x => parseInt(x, 10));
-
-  // Japan uses JST (UTC+9) year-round - no daylight saving time
-  const jstUTCOffset = 9;
-
-  // Convert JST local time to UTC
-  // JST local = UTC + 9, so UTC = JST local - 9 (in hours)
-  let utcHour = hour - jstUTCOffset;
-  let utcDay = day;
-  let utcMonth = month;
-  let utcYear = year;
-
-  // Handle day rollover
-  if (utcHour < 0) {
-    utcHour += 24;
-    utcDay -= 1;
-    if (utcDay < 1) {
-      utcMonth -= 1;
-      if (utcMonth < 1) {
-        utcMonth = 12;
-        utcYear -= 1;
-      }
-      // Days in previous month
-      const isLeapYear = (utcYear % 4 === 0 && utcYear % 100 !== 0) || utcYear % 400 === 0;
-      const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      utcDay = daysInMonth[utcMonth - 1];
-    }
-  }
-
-  // Create UTC date
-  const utcDate = new Date(Date.UTC(utcYear, utcMonth - 1, utcDay, utcHour, minute));
-
-  // Calculate day of year for UTC date
-  const jan1UTC = new Date(Date.UTC(utcYear, 0, 1));
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const dayOfYear = Math.ceil((utcDate.getTime() - jan1UTC.getTime()) / msPerDay);
-
-  // Decimal hour in UTC
-  const decimalHour = utcDate.getUTCHours() + utcDate.getUTCMinutes() / 60;
-
-  // Solar declination (degrees) - using Cooper's equation
-  const B = (360 / 365.25) * (dayOfYear - 81) * Math.PI / 180;
-  const declRad = (0.006918 - 0.399912 * Math.cos(B) + 0.070257 * Math.sin(B) - 0.006758 * Math.cos(2 * B) + 0.000907 * Math.sin(2 * B) - 0.002697 * Math.cos(3 * B) + 0.00111 * Math.sin(3 * B));
-
-  // Hour angle (degrees per hour = 360/24 = 15)
-  const hourAngleDeg = (decimalHour - 12) * 15 + lon;
-  const hourAngleRad = hourAngleDeg * Math.PI / 180;
-
-  // Latitude in radians
-  const latRad = lat * Math.PI / 180;
-
-  // Zenith angle calculation
-  const zenithRad = Math.acos(Math.sin(latRad) * Math.sin(declRad) + Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourAngleRad));
-  const zenithDeg = zenithRad * 180 / Math.PI;
-
-  return Math.max(0, Math.min(180, zenithDeg));
-}
-
-/**
- * Calculate saturation vapor pressure using Magnus formula
- * @param T Temperature in Celsius
- * @returns Saturation vapor pressure in Pa
- */
-export function calculateBuckSaturationVaporPressure(T: number): number {
-  // Magnus formula: esat(T) = 6.1121 * exp((17.502 * T) / (240.97 + T)) hPa
-  // Convert to Pa by multiplying by 100
-  return 6.1121 * Math.exp((17.502 * T) / (240.97 + T)) * 100;
-}
-
-/**
- * Calculate derivative of saturation vapor pressure with respect to temperature
- * d(esat)/dT in Pa/K
- */
-export function calculateVaporPressureDerivative(T: number): number {
-  const a = 17.502;
-  const b = 240.97;
-  const esat = calculateBuckSaturationVaporPressure(T);
-
-  // d(esat)/dT = esat * a * b / (b + T)^2 in Pa/K
-  return esat * a * b / Math.pow(b + T, 2);  // esat is in Pa, result in Pa/K
-}
-
-/**
- * Calculate air properties at given temperature and pressure
- * Returns: density (kg/m³), dynamic viscosity (Pa·s), thermal conductivity (W/(m·K)),
- *          Prandtl number, Schmidt number, diffusivity (m²/s)
- */
-export function calculateAirProperties(Ta_K: number, P_Pa: number): {
-  rho: number;
-  mu: number;
-  k: number;
-  Pr: number;
-  Sc: number;
-  D: number;
-} {
-  // Density using ideal gas law: ρ = P / (R * T)
-  const rho = P_Pa / (GAS_CONSTANT_AIR * Ta_K);
-
-  // Dynamic viscosity using Sutherland's formula
-  // μ = μ0 * (T/T0)^1.5 * (T0 + S) / (T + S)
-  const T0 = 273.15;
-  const mu0 = 1.73e-5; // Pa·s at 273.15 K
-  const S = 110.4; // Sutherland constant for air
-  const mu = mu0 * Math.pow(Ta_K / T0, 1.5) * (T0 + S) / (Ta_K + S);
-
-  // Thermal conductivity using polynomial approximation
-  // k ≈ 0.02411 + 0.0000773*(T-273.15) W/(m·K)
-  const Ta_C = Ta_K - 273.15;
-  const k = 0.02411 + 0.0000773 * Ta_C;
-
-  // Prandtl number (dimensionless)
-  const cp = 1005; // J/(kg·K) for air at standard conditions
-  const Pr = (cp * mu) / k;
-
-  // Thermal diffusivity
-  const alpha = k / (rho * cp);
-
-  // Schmidt number (kinematic viscosity / mass diffusivity)
-  // For air-water vapor: Sc ≈ 0.6 (approximately)
-  // D (mass diffusivity) = μ / (ρ * Sc)
-  const Sc = 0.60;
-  const D = mu / (rho * Sc);
-
-  return { rho, mu, k, Pr, Sc, D };
-}
-
-/**
- * Calculate wind speed at 2m from wind speed at 10m
- */
-export function calculateWindAt2m(u10m: number, p: number = 0.15): number {
-  return u10m * Math.pow(2 / 10, p);
-}
-
-/**
- * Calculate radiation components received by globe and wick
- */
-export function calculateRadiationComponents(
-  Ta: number,
-  SRdown: number,
-  Direct: number,
-  Diffuse: number,
-  ea: number,
-  theta_deg: number
-): { SRg: number; LRg: number; SRw: number; LRw: number } {
-  const theta_rad = theta_deg * Math.PI / 180;
-
-  // Atmospheric emissivity
-  const ea_hPa = ea / 100;
-  const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-
-  // Direct beam fraction
-  const fdir = Direct > 0 ? Direct / (Direct + Diffuse) : 0;
-
-  // Reflected shortwave radiation
-  const SRup = SURFACE_ALBEDO * SRdown;
-
-  // Longwave radiation
-  const Ta_K = Ta + 273.15;
-  const LRdown = emissivity_atm * STEFAN_BOLTZMANN * Math.pow(Ta_K, 4);
-  const LRup = STEFAN_BOLTZMANN * Math.pow(Ta_K, 4);
-
-  // Shortwave on globe (0.5 sphere, receiving from sky and ground)
-  const cosTheta = Math.cos(theta_rad);
-  const denom = Math.max(0.1, cosTheta);
-
-  const SRg = 0.5 * (1 - GLOBE_ALBEDO) * [
-    (1 - fdir) * SRdown,
-    fdir * SRdown / (2 * denom),
-    SRup
-  ].reduce((a, b) => a + b, 0);
-
-  // Longwave on globe
-  const LRg = 0.5 * GLOBE_EMISSIVITY * (LRdown + LRup);
-
-  // Shortwave on wick (0.5 cylinder with specified albedo and geometry)
-  // From Kong paper equation
-  const SRw = (1 - WICK_ALBEDO) * [
-    (1 + 0.007 / (4 * WICK_LENGTH)) * (1 - fdir) * SRdown,
-    (Math.tan(theta_rad) / Math.PI + 0.007 / (4 * WICK_LENGTH)) * fdir * SRdown,
-    SRup
-  ].reduce((a, b) => a + b, 0);
-
-  // Longwave on wick
-  const LRw = 0.5 * WICK_EMISSIVITY * (LRdown + LRup);
-
-  return { SRg, LRg, SRw, LRw };
-}
-
-/**
- * Calculate heat transfer coefficients for globe and wick
- */
-export function calculateHeatTransferCoefficients(
-  Ta: number,
-  Tw: number,
-  P_Pa: number,
-  u2m: number,
-  airProps: ReturnType<typeof calculateAirProperties>
-): {
-  h_cg: number;
-  h_rg: number;
-  h_cw: number;
-  h_rw: number;
-  h_ew: number;
-  beta: number;
-} {
-  const { rho, mu, k, Pr, Sc, D } = airProps;
-  const Ta_K = Ta + 273.15;
-
-  // --- Globe heat transfer ---
-  // Reynolds number for sphere
-  const Re_globe = (rho * u2m * GLOBE_DIAMETER) / mu;
-
-  // Nusselt number (Churchill correlation for sphere)
-  const Nu_globe = 2.0 + 0.6 * Math.pow(Re_globe, 0.5) * Math.pow(Pr, 1/3);
-
-  // Convective heat transfer coefficient
-  const h_cg = (k / GLOBE_DIAMETER) * Nu_globe;
-
-  // Radiative heat transfer coefficient (linearized)
-  const h_rg = 4 * STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * Math.pow(Ta_K, 3);
-
-  // --- Wick heat transfer ---
-  // Reynolds number for cylinder
-  const Re_wick = (rho * u2m * WICK_DIAMETER) / mu;
-
-  // Nusselt number (Morgan correlation for cylinder)
-  const C_cylinder = 0.281;
-  const m_cylinder = 0.6;
-  const Nu_wick = C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Pr, 1/3);
-
-  // Convective heat transfer coefficient
-  const h_cw = (k / WICK_DIAMETER) * Nu_wick;
-
-  // Radiative heat transfer coefficient
-  const h_rw = 4 * STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 3);
-
-  // --- Evaporative heat transfer ---
-  // Mass transfer coefficient (WBGT.md line 102)
-  // k̂x = (ρD/MD) × b × Re^(1-c) × Sc^(1-a)
-  // Where D (in numerator) = diffusivity, MD (in denominator) = M_air × Diameter
-  const kx = (rho * D / (MOLECULAR_WEIGHT_AIR * WICK_DIAMETER)) * C_cylinder * Math.pow(Re_wick, m_cylinder) * Math.pow(Sc, 1/3);
-
-  // Psychrometric coefficient (WBGT.md line 80)
-  // β̂ = k̂x × MH₂O × ΔH / P
-  const beta = kx * MOLECULAR_WEIGHT_WATER * LATENT_HEAT / P_Pa;
-
-  // Vapor pressure derivative at mean wick temperature
-  const Tw_mean = (Tw + Ta) / 2;
-  const desat_dT = calculateVaporPressureDerivative(Tw_mean);
-
-  const h_ew = beta * desat_dT;
-
-  return { h_cg, h_rg, h_cw, h_rw, h_ew, beta };
-}
-
-/**
- * Calculate Kong black globe temperature
- */
-export function calculateKongBlackGlobe(
-  Ta: number,
-  SRg: number,
-  LRg: number,
-  h_cg: number,
-  h_rg: number
-): number {
-  const Ta_K = Ta + 273.15;
-
-  // Numerator: shortwave + longwave radiation
-  const numerator = SRg + LRg - STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * Math.pow(Ta_K, 4);
-
-  // Denominator: total heat transfer coefficient
-  const denominator = h_cg + h_rg;
-
-  if (denominator === 0) return Ta;
-
-  const T_g_K = Ta_K + numerator / denominator;
-  return T_g_K - 273.15;
-}
-
-/**
- * Calculate Kong natural wet bulb temperature
- */
-export function calculateKongNaturalWetBulb(
-  Ta: number,
-  Tw: number,
-  SRw: number,
-  LRw: number,
-  ea: number,
-  h_cw: number,
-  h_rw: number,
-  h_ew: number,
-  beta: number,
-  P_Pa: number
-): number {
-  const Ta_K = Ta + 273.15;
-  const Tw_K = Tw + 273.15;
-
-  // Saturation vapor pressure at air temperature and wick temperature
-  const e_sat_Ta = calculateBuckSaturationVaporPressure(Ta);
-  const e_sat_Tw = calculateBuckSaturationVaporPressure(Tw);
-
-  // Psychrometric equation term
-  const psych_term = beta * (e_sat_Ta - ea);
-
-  // Radiation balance per Kong zero-iteration formula (WBGT.md line 66)
-  // Uses Ta⁴ as linearization point (not Tnw⁴)
-  const rad_balance = SRw + LRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 4);
-
-  // Numerator: net radiation minus psychrometric cooling
-  const numerator = rad_balance - psych_term;
-
-  // Denominator: total heat transfer coefficient
-  const denominator = h_ew + h_cw + h_rw;
-
-  if (denominator === 0) return Ta;
-
-  const T_nw_K = Ta_K + numerator / denominator;
-  return T_nw_K - 273.15;
-}
-
-/**
- * Calculate Kong WBGT using zero-iteration method
- */
-export function calculateKongWBGT(Ta: number, T_g: number, T_nw: number): number {
-  // ŴBGT = 0.7 × T̂nw + 0.2 × T̂g + 0.1 × Ta
-  return 0.7 * T_nw + 0.2 * T_g + 0.1 * Ta;
-}
-
-/**
- * Calculate Environmental Stress Index (ESI)
- * ESI = 0.62*Ta - 0.007*RH + 0.002*SR + 0.0043*(Ta*RH) - 0.078/(0.1+SR)
- * @param Ta Temperature in Celsius
- * @param RH Relative humidity in percent
- * @param SR Solar radiation in W/m²
- * @returns Environmental Stress Index
- */
-export function calculateESI(Ta: number, RH: number, SR: number): number {
-  // ESI = 0.62*Ta - 0.007*RH + 0.002*SR + 0.0043*(Ta*RH) - 0.078/(0.1+SR)
-  return 0.62 * Ta - 0.007 * RH + 0.002 * SR + 0.0043 * (Ta * RH) - 0.078 / (0.1 + SR);
-}
-
-/**
- * Complete Kong WBGT calculation pipeline for a single data point
- */
-export function calculateKongWBGTPipeline(
-  Ta: number,
-  Tw: number,
-  RH: number,
-  P_hPa: number,
-  u10m: number,
-  SRdown: number,
-  SRdirect: number,
-  SRdiffuse: number,
-  lat: number,
-  lon: number,
-  timestamp: string
-): {
-  kong_wbgt: number;
-  black_globe_temp: number;
-  natural_wet_bulb_temp: number;
-  solar_zenith_angle: number;
-  esi: number;
-  intermediate: {
-    vapor_pressure: number;
-    atmospheric_emissivity: number;
-    direct_fraction: number;
-  };
-} {
-  // Step 1: Solar geometry
-  const theta_deg = calculateSolarZenithAngle(lat, lon, timestamp);
-
-  // Validation: If sun is below horizon (zenith > 90°), radiation should be zero
-  const isSunAboveHorizon = theta_deg <= 90;
-  const SRdown_valid = isSunAboveHorizon ? SRdown : 0;
-  const SRdirect_valid = isSunAboveHorizon ? SRdirect : 0;
-  const SRdiffuse_valid = isSunAboveHorizon ? SRdiffuse : 0;
-
-  // Step 2: Atmospheric parameters
-  const Ta_K = Ta + 273.15;
-  const P_Pa = P_hPa * 100;
-
-  // Actual vapor pressure from relative humidity
-  const esat_Ta = calculateBuckSaturationVaporPressure(Ta);
-  const ea_actual = (RH / 100) * esat_Ta;
-
-  const ea_hPa = ea_actual / 100;
-  const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const totalSR = SRdirect_valid + SRdiffuse_valid;
-  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
-
-  // Step 3: Radiation components
-  const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
-    Ta,
-    SRdown_valid,
-    SRdirect_valid,
-    SRdiffuse_valid,
-    ea_actual,
-    theta_deg
-  );
-
-  // Step 4: Air properties at Ta and P
-  const u2m = calculateWindAt2m(u10m);
-  const airProps = calculateAirProperties(Ta_K, P_Pa);
-
-  // Step 5: Heat transfer coefficients
-  const coefficients = calculateHeatTransferCoefficients(
-    Ta,
-    Tw,
-    P_Pa,
-    u2m,
-    airProps
-  );
-
-  // Step 6: Temperature calculations
-  const T_g = calculateKongBlackGlobe(
-    Ta,
-    SRg,
-    LRg,
-    coefficients.h_cg,
-    coefficients.h_rg
-  );
-
-  const T_nw = calculateKongNaturalWetBulb(
-    Ta,
-    Tw,
-    SRw,
-    LRw,
-    ea_actual,
-    coefficients.h_cw,
-    coefficients.h_rw,
-    coefficients.h_ew,
-    coefficients.beta,
-    P_Pa
-  );
-
-  // Step 7: Final WBGT
-  const wbgt = calculateKongWBGT(Ta, T_g, T_nw);
-
-  // Step 8: Environmental Stress Index (ESI)
-  const esi = calculateESI(Ta, RH, SRdown);
-
-  return {
-    kong_wbgt: wbgt,
-    black_globe_temp: T_g,
-    natural_wet_bulb_temp: T_nw,
-    solar_zenith_angle: theta_deg,
-    esi: esi,
-    intermediate: {
-      vapor_pressure: ea_actual,
-      atmospheric_emissivity: emissivity_atm,
-      direct_fraction: fdir
-    }
-  };
-}
-
-export function calculateKongWBGTPipelineJST(
-  Ta: number,
-  Tw: number,
-  RH: number,
-  P_hPa: number,
-  u10m: number,
-  SRdown: number,
-  SRdirect: number,
-  SRdiffuse: number,
-  lat: number,
-  lon: number,
-  timestamp: string
-): {
-  kong_wbgt: number;
-  black_globe_temp: number;
-  natural_wet_bulb_temp: number;
-  solar_zenith_angle: number;
-  esi: number;
-  intermediate: {
-    vapor_pressure: number;
-    atmospheric_emissivity: number;
-    direct_fraction: number;
-  };
-} {
-  // Step 1: Solar geometry (using JST timezone)
-  const theta_deg = calculateSolarZenithAngleJST(lat, lon, timestamp);
-
-  // Validation: If sun is below horizon (zenith > 90°), radiation should be zero
-  const isSunAboveHorizon = theta_deg <= 90;
-  const SRdown_valid = isSunAboveHorizon ? SRdown : 0;
-  const SRdirect_valid = isSunAboveHorizon ? SRdirect : 0;
-  const SRdiffuse_valid = isSunAboveHorizon ? SRdiffuse : 0;
-
-  // Step 2: Atmospheric parameters
-  const Ta_K = Ta + 273.15;
-  const P_Pa = P_hPa * 100;
-
-  // Actual vapor pressure from relative humidity
-  const esat_Ta = calculateBuckSaturationVaporPressure(Ta);
-  const ea_actual = (RH / 100) * esat_Ta;
-
-  const ea_hPa = ea_actual / 100;
-  const emissivity_atm = 0.575 * Math.pow(ea_hPa, 0.143);
-  const totalSR = SRdirect_valid + SRdiffuse_valid;
-  const fdir = totalSR > 0 ? SRdirect_valid / totalSR : 0;
-
-  // Step 3: Radiation components
-  const { SRg, LRg, SRw, LRw } = calculateRadiationComponents(
-    Ta,
-    SRdown_valid,
-    SRdirect_valid,
-    SRdiffuse_valid,
-    ea_actual,
-    theta_deg
-  );
-
-  // Step 4: Air properties at Ta and P
-  const u2m = calculateWindAt2m(u10m);
-  const airProps = calculateAirProperties(Ta_K, P_Pa);
-
-  // Step 5: Heat transfer coefficients
-  const coefficients = calculateHeatTransferCoefficients(
-    Ta,
-    Tw,
-    P_Pa,
-    u2m,
-    airProps
-  );
-
-  // Step 6: Temperature calculations
-  const T_g = calculateKongBlackGlobe(
-    Ta,
-    SRg,
-    LRg,
-    coefficients.h_cg,
-    coefficients.h_rg
-  );
-
-  const T_nw = calculateKongNaturalWetBulb(
-    Ta,
-    Tw,
-    SRw,
-    LRw,
-    ea_actual,
-    coefficients.h_cw,
-    coefficients.h_rw,
-    coefficients.h_ew,
-    coefficients.beta,
-    P_Pa
-  );
-
-  // Step 7: Final WBGT
-  const wbgt = calculateKongWBGT(Ta, T_g, T_nw);
-
-  // Step 8: Environmental Stress Index (ESI)
-  const esi = calculateESI(Ta, RH, SRdown);
-
-  return {
-    kong_wbgt: wbgt,
-    black_globe_temp: T_g,
-    natural_wet_bulb_temp: T_nw,
-    solar_zenith_angle: theta_deg,
-    esi: esi,
-    intermediate: {
-      vapor_pressure: ea_actual,
-      atmospheric_emissivity: emissivity_atm,
-      direct_fraction: fdir
-    }
-  };
-}
-
-export function calculateWBGT(ta: number, rh: number, sr: number): number {
-  // WBGT = 0.62Ta - 0.007RH + 0.002SR + 0.0043(Ta×RH) - 0.078/(0.1+SR)
-  return 0.62 * ta - 0.007 * rh + 0.002 * sr + 0.0043 * (ta * rh) - 0.078 / (0.1 + sr);
-}
-
-export function calculateEWBGT(ta: number, e: number): number {
-  // eWBGT = 0.567 × Ta + 0.393 × e + 3.94
-  return 0.567 * ta + 0.393 * e + 3.94;
-}
-
-function calculateAT(ta: number, rh: number, ws_kmh: number, sr: number): number {
-  const ws = ws_kmh / 3.6;
-  const vaporPressure = (rh / 100) * 6.105 * Math.exp((17.27 * ta) / (237.7 + ta));
-  return ta + 0.348 * vaporPressure - 0.70 * 0.75 * ws + 0.70 * 0.02 * sr / (ws * 0.75 + 10) - 4.25;
-}
+// --- Helper functions for data parsing ---
+// Note: All calculation functions (vapor pressure, Kong WBGT, etc.) are imported from ./calculations
+// This eliminates ~800 lines of duplicate code that was previously maintained in this file
 
 function parseBOMTime(bomTime: string): string {
   return `${bomTime.slice(0,4)}-${bomTime.slice(4,6)}-${bomTime.slice(6,8)}T${bomTime.slice(8,10)}:${bomTime.slice(10,12)}`;
@@ -867,14 +187,11 @@ async function fetchObservations(startDate?: string, endDate?: string): Promise<
   const now = new Date();
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
-  console.log('[FETCH OBS] startDate:', startDate, 'endDate:', endDate);
-  console.log('[FETCH OBS] Fetching past 72 hours of observations');
 
   // Observations endpoint only returns past 72 hours - always fetch recent with Kong parameters
   const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3`;
   const bomUrl = "https://www.bom.gov.au/fwo/IDN60801/IDN60801.95765.json";
 
-  console.log('[FETCH OBS] Fetching from BOM and Open-Meteo...');
   const [srResponse, bomResponse] = await Promise.all([
     fetch(srUrl, {
       cf: {
@@ -885,13 +202,10 @@ async function fetchObservations(startDate?: string, endDate?: string): Promise<
     fetch(bomUrl)
   ]);
 
-  console.log('[FETCH OBS] Response statuses - SR:', srResponse.status, 'BOM:', bomResponse.status);
 
   if (srResponse.status !== 200) {
-    console.log('[FETCH OBS] SR ERROR - Status:', srResponse.status);
   }
   if (bomResponse.status !== 200) {
-    console.log('[FETCH OBS] BOM ERROR - Status:', bomResponse.status);
   }
 
   return {
@@ -902,13 +216,11 @@ async function fetchObservations(startDate?: string, endDate?: string): Promise<
 }
 
 async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData | null; bomData: BOMData | null; responseStatuses: { sr: number; aq: number; bom: number } }> {
-  // TODO: Re-enable caching after debugging
   return await (async () => {
       const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&forecast_days=3`;
       const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=us_aqi,pm10,pm2_5&timezone=Australia%2FSydney&forecast_days=3`;
       const bomUrl = `https://api.weather.bom.gov.au/v1/locations/${BOM_LOCATION_ID}/forecasts/hourly`;
 
-      console.log('[FETCH] Starting forecast fetch...');
       const [srResponse, aqResponse, bomResponse] = await Promise.all([
         fetch(srUrl, {
           cf: {
@@ -933,7 +245,6 @@ async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData 
         srData = await srResponse.json() as SRData;
       } else {
         const errorText = await srResponse.text();
-        console.log('[FETCH] SR ERROR:', srResponse.status, errorText.substring(0, 200));
       }
 
       if (aqResponse.status === 200) {
@@ -944,14 +255,8 @@ async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData 
         bomData = await bomResponse.json() as BOMData;
       }
 
-      console.log('[FETCH] srData.hourly exists?', !!srData?.hourly);
-      console.log('[FETCH] srData.hourly.time length:', srData?.hourly?.time?.length || 0);
-      console.log('[FETCH] srData.hourly.time (first 3):', srData?.hourly?.time?.slice(0, 3));
-      console.log('[FETCH] srData.hourly.shortwave_radiation (first 3):', srData?.hourly?.shortwave_radiation?.slice(0, 3));
-      console.log('[FETCH] BOM data.length:', bomData?.data?.length || 0);
 
       if (srResponse.status !== 200) {
-        console.log('[FETCH] SR ERROR:', JSON.stringify(srData).substring(0, 200));
       }
 
       return {
@@ -969,11 +274,7 @@ async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData 
 
 // --- Helper functions for max values ---
 function getMaxInRange(data: any[], startTime: string, endTime: string) {
-  console.log('[GET MAX] Input - start:', startTime, 'end:', endTime);
-  console.log('[GET MAX] Data count:', data.length);
   if (data.length > 0) {
-    console.log('[GET MAX] First timestamp:', data[0]?.timestamp);
-    console.log('[GET MAX] Last timestamp:', data[data.length - 1]?.timestamp);
   }
 
   // Convert ISO timestamps (Sydney local time) to DD/MM/YYYY, HH:MM:SS format for consistent comparison
@@ -986,22 +287,17 @@ function getMaxInRange(data: any[], startTime: string, endTime: string) {
   const startFormatted = convertISOToLocalFormat(startTime);
   const endFormatted = convertISOToLocalFormat(endTime);
 
-  console.log('[GET MAX] Converted start:', startFormatted);
-  console.log('[GET MAX] Converted end:', endFormatted);
 
   const inRange = data.filter((d: any) => {
     // Both timestamps are now in same format, compare as strings
     // This works because YYYY-MM-DD format is lexicographically sortable
     const matches = d.timestamp >= startFormatted && d.timestamp <= endFormatted;
     if (matches || data.indexOf(d) < 3) {
-      console.log(`[GET MAX] Record ${data.indexOf(d)}: ${d.timestamp} matches=${matches}`);
     }
     return matches;
   });
 
-  console.log('[GET MAX] Filtered count:', inRange.length);
   if (inRange.length === 0) {
-    console.log('[GET MAX] No records in range! Returning null');
     return null;
   }
 
@@ -1026,11 +322,8 @@ function getMaxInRange(data: any[], startTime: string, endTime: string) {
  * with higher WBGT (conservative approach for athlete safety).
  */
 function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: string) {
-  console.log('[INTERPOLATE] Input - start:', startTime, 'end:', endTime);
-  console.log('[INTERPOLATE] Data count:', data.length);
 
   if (data.length === 0) {
-    console.log('[INTERPOLATE] No data available for interpolation');
     return null;
   }
 
@@ -1062,13 +355,10 @@ function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: stri
     }
   }
 
-  console.log('[INTERPOLATE] Closest before:', closestBefore?.timestamp, 'WBGT:', closestBefore?.wbgt);
-  console.log('[INTERPOLATE] Closest after:', closestAfter?.timestamp, 'WBGT:', closestAfter?.wbgt);
 
   // If we have both, pick the one with higher WBGT
   if (closestBefore && closestAfter) {
     const result = closestBefore.wbgt >= closestAfter.wbgt ? closestBefore : closestAfter;
-    console.log('[INTERPOLATE] Selected observation with higher WBGT:', result.timestamp, 'WBGT:', result.wbgt);
     return {
       ...result,
       timestamp: `${result.timestamp} (interpolated from range ${startTime} to ${endTime})`,
@@ -1078,7 +368,6 @@ function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: stri
 
   // If we only have one, use that
   if (closestBefore) {
-    console.log('[INTERPOLATE] Using only available observation before range');
     return {
       ...closestBefore,
       timestamp: `${closestBefore.timestamp} (interpolated from range ${startTime} to ${endTime})`,
@@ -1087,7 +376,6 @@ function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: stri
   }
 
   if (closestAfter) {
-    console.log('[INTERPOLATE] Using only available observation after range');
     return {
       ...closestAfter,
       timestamp: `${closestAfter.timestamp} (interpolated from range ${startTime} to ${endTime})`,
@@ -1095,7 +383,6 @@ function getInterpolatedMaxInRange(data: any[], startTime: string, endTime: stri
     };
   }
 
-  console.log('[INTERPOLATE] No suitable observations found for interpolation');
   return null;
 }
 
@@ -1290,8 +577,19 @@ function parseRecentObservations(data: ObservationsResponse): any[] {
 
   bom.forEach((obs: any) => {
     const timestamp = normalizeBOMTimestamp(obs.local_date_time);
-    const bomTime = new Date(timestamp);
-    const hourKey = `${bomTime.getUTCFullYear()}-${String(bomTime.getUTCMonth() + 1).padStart(2, '0')}-${String(bomTime.getUTCDate()).padStart(2, '0')}T${String(bomTime.getUTCHours()).padStart(2, '0')}`;
+    // Convert to Sydney timezone for key matching with Open-Meteo data
+    const sydneyTime = new Date(timestamp).toLocaleString('en-CA', {
+      timeZone: 'Australia/Sydney',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const [datePart, timePart] = sydneyTime.split(', ');
+    const hourPart = timePart.substring(0, 2);
+    const hourKey = `${datePart}T${hourPart}`;
 
     const omData = omMap[hourKey]?.omData || {};
     const ta = obs.air_temp;
@@ -1506,10 +804,8 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   const omEntry = findOpenMeteoEntry(hourKey, omMap);
 
   if (!omMap || Object.keys(omMap).length === 0) {
-    console.log(`[PARSE OBS] obs ${idx}: No Open-Meteo data available, using BOM only`);
     // Continue with BOM-only data
   } else if (!omEntry) {
-    console.log(`[PARSE OBS] SKIPPING obs ${idx}: No Open-Meteo data for ${hourKey}`);
     return null;
   }
 
@@ -1523,7 +819,6 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   if (!omData) {
     const hour = parseInt(hourKey.split('T')[1]);
     solar_radiation = estimateSolarRadiation(hour);
-    console.log(`[PARSE OBS] Estimated solar radiation ${solar_radiation} W/m² for hour ${hour}`);
   }
 
   const e = calculateVaporPressure(ta, rh);
@@ -1563,11 +858,9 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
 }
 
 function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, startTime?: string, endTime?: string): any[] {
-  console.log('[PARSE OBS] Called with startTime:', startTime, 'endTime:', endTime);
   const bomObs = bomData?.observations?.data || [];
   const { omMap, cloudMap, uvMap } = buildOpenMeteoMaps(srData);
 
-  console.log('[PARSE OBS] Processing', bomObs.length, 'BOM observations');
 
   const results: any[] = bomObs
     .map((obs: any, idx: number) => {
@@ -1582,7 +875,6 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
 
     // If no exact data in range, try interpolation fallback
     if (!maxInRange) {
-      console.log('[PARSE OBS] No data in exact range, attempting interpolation');
       const interpolated = getInterpolatedMaxInRange(results, startTime, endTime);
       return interpolated ? [interpolated] : [];
     }
@@ -1638,7 +930,6 @@ function convertUtcToSydneyKey(utcTimestamp: string): string {
 function findOpenMeteoEntry(sydneyHourKey: string, omMap: Record<string, any>): any | null {
   // If no Open-Meteo data available, return null to trigger fallback behavior
   if (!omMap || Object.keys(omMap).length === 0) {
-    console.log(`[PARSE] No Open-Meteo data available, using fallback`);
     return null;
   }
 
@@ -1654,7 +945,6 @@ function findOpenMeteoEntry(sydneyHourKey: string, omMap: Record<string, any>): 
   while (fallbackHour >= 0) {
     const fallbackKey = `${sydneyHourKey.split('T')[0]}T${fallbackHour.toString().padStart(2, '0')}`;
     if (omMap[fallbackKey]) {
-      console.log(`[PARSE] Using fallback: ${sydneyHourKey} -> ${fallbackKey}`);
       return omMap[fallbackKey];
     }
     fallbackHour--;
@@ -1705,7 +995,6 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
   if (!omEntry && hourKey) {
     const hour = parseInt(hourKey.split('T')[1]);
     solar_radiation = estimateSolarRadiation(hour);
-    console.log(`[PARSE] Estimated solar radiation ${solar_radiation} W/m² for hour ${hour}`);
   }
 
   const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
@@ -1753,7 +1042,6 @@ function parseForecastData(srData: SRData | null, aqData: AQData | null, bomData
   const forecasts = bomData?.data || [];
   const { omMap, cloudMap, uvMap } = buildOpenMeteoMaps(srData);
 
-  console.log('[PARSE] Processing', forecasts.length, 'forecasts');
 
   return forecasts
     .map((forecast: any) => processForecast(forecast, forecast.time, omMap, cloudMap, uvMap))
