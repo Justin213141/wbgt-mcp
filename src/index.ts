@@ -810,9 +810,9 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   }
 
   const omData = omEntry?.omData;
-  const ta = obs.temp || omData?.temp || 0;
-  const rh = obs.relative_humidity || omData?.humidity || 0;
-  const ws_kmh = obs.wind?.speed_kilometre || (omData?.wind_speed * 3.6) || 0;
+  const ta = obs.air_temp || omData?.temp || 0;
+  const rh = obs.rel_hum || omData?.humidity || 0;
+  const ws_kmh = obs.wind_spd_kmh || (omData?.wind_speed * 3.6) || 0;
   let solar_radiation = omData?.sr_instant || 0;
 
   // If no Open-Meteo data, estimate solar radiation based on time of day
@@ -846,9 +846,9 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
     timestamp: `${day}/${month}/${year}, ${timePart}`,
     temperature: parseFloat(ta.toFixed(1)),
     humidity: Math.round(rh),
-    dew_point: parseFloat((obs.dew_point || omData?.dewpoint || 0).toFixed(1)),
-    wind_speed_ms: parseFloat((omData?.wind_speed || 0).toFixed(2)),
-    solar_radiation: parseFloat((omData?.sr_instant || 0).toFixed(1)),
+    dew_point: parseFloat((obs.dewpt || omData?.dewpoint || 0).toFixed(1)),
+    wind_speed_ms: parseFloat((ws_kmh / 3.6 || omData?.wind_speed || 0).toFixed(2)),
+    solar_radiation: parseFloat((solar_radiation || omData?.sr_instant || 0).toFixed(1)),
     cloud_cover: parseFloat((cloudMap[hourKey] || 0).toFixed(1)),
     uv_index: parseFloat((uvMap[hourKey] || 0).toFixed(1)),
     wbgt: wbgt_kong !== null ? parseFloat(wbgt_kong.toFixed(1)) : parseFloat(wbgt_esi.toFixed(1)),
