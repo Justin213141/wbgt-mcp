@@ -1001,6 +1001,8 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
   const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
 
   let wbgt_kong: number | null = null;
+  let kongCalculated = false;
+
   if (omEntry?.omData) {
     try {
       const sydneyTimestamp = hourKey + ':00';
@@ -1010,6 +1012,7 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
         SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
       );
       wbgt_kong = kongCalc.kong_wbgt;
+      kongCalculated = true;
     } catch (error) {
       console.error(`[PARSE] Error calculating Kong WBGT for ${timestamp}:`, error);
     }
@@ -1034,7 +1037,7 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     esi: parseFloat(wbgt_esi.toFixed(1)),
     apparent_temp: parseFloat(at.toFixed(1)),
     rain_chance: forecast.rain?.chance || 0,
-    source: omEntry ? 'hybrid' : (solar_radiation > 0 ? 'bom_plus_estimated' : 'bom_only')
+    source: kongCalculated ? 'kong_wbgt' : (omEntry ? 'hybrid' : (solar_radiation > 0 ? 'bom_plus_estimated' : 'bom_only'))
   };
 }
 
