@@ -45,6 +45,405 @@ Replace BOM data source with WeatherZone for historical WBGT calculations, enabl
 
 **Integration**: Time-based matching of Open-Meteo solar data with WeatherZone observations
 
+## Kong WBGT Calculation Method
+
+### Overview
+
+The Kong WBGT method is an advanced heat stress calculation that uses a **zero-iteration analytical approach** to estimate Wet Bulb Globe Temperature. Unlike traditional methods requiring iterative numerical solutions, Kong's method provides accurate results through explicit formulas based on detailed heat transfer physics.
+
+**Key Reference**: Kong & Huber (2022) - "A zero-iteration numerical solution to the WBGT"
+
+### Why Kong WBGT?
+
+**Advantages over simplified WBGT methods**:
+1. **Physically accurate**: Based on detailed radiation and heat transfer modeling
+2. **No iteration required**: Faster computation with analytical formulas
+3. **Accounts for solar geometry**: Incorporates solar zenith angle and radiation components
+4. **Separate radiation components**: Uses direct, diffuse, and reflected radiation
+5. **Research validated**: Published in peer-reviewed literature
+
+**Traditional vs Kong WBGT**:
+- **Traditional**: `WBGT ≈ 0.7*Tw + 0.3*Ta` (ignores solar radiation, indoor only)
+- **Kong**: Comprehensive outdoor calculation with full physics modeling
+
+### Mathematical Foundation
+
+#### Final WBGT Formula
+
+```
+WBGT = 0.7 × T_nw + 0.2 × T_g + 0.1 × T_a
+```
+
+Where:
+- **T_nw**: Natural wet bulb temperature (°C)
+- **T_g**: Black globe temperature (°C)
+- **T_a**: Air temperature (°C)
+
+#### Component Calculations
+
+##### 1. Black Globe Temperature (T_g)
+
+Represents the radiant heat load from sun and surroundings.
+
+```
+T_g = T_a + (SR_g + LR_g - εσT_a⁴) / (h_cg + h_rg)
+```
+
+**Parameters**:
+- `SR_g`: Shortwave radiation absorbed by globe (W/m²)
+- `LR_g`: Longwave radiation absorbed by globe (W/m²)
+- `ε`: Globe emissivity (0.95)
+- `σ`: Stefan-Boltzmann constant (5.67×10⁻⁸ W/(m²·K⁴))
+- `h_cg`: Convective heat transfer coefficient for globe
+- `h_rg`: Radiative heat transfer coefficient for globe
+
+**Globe Properties**:
+- Diameter: 50.8 mm (2 inches)
+- Emissivity: 0.95
+- Albedo: 0.05 (black surface)
+
+##### 2. Natural Wet Bulb Temperature (T_nw)
+
+Represents evaporative cooling potential.
+
+```
+T_nw = T_a + (SR_w + LR_w - εσT_a⁴ - β(e_sat(T_a) - e_a)) / (h_ew + h_cw + h_rw)
+```
+
+**Parameters**:
+- `SR_w`: Shortwave radiation absorbed by wick (W/m²)
+- `LR_w`: Longwave radiation absorbed by wick (W/m²)
+- `β`: Psychrometric coefficient
+- `e_sat(T_a)`: Saturation vapor pressure at air temp (Pa)
+- `e_a`: Actual vapor pressure from relative humidity (Pa)
+- `h_ew`: Evaporative heat transfer coefficient
+- `h_cw`: Convective heat transfer coefficient for wick
+- `h_rw`: Radiative heat transfer coefficient for wick
+
+**Wick Properties**:
+- Diameter: 7 mm
+- Length: 25.4 mm (1 inch)
+- Emissivity: 0.95
+- Albedo: 0.4 (white cloth)
+
+### Detailed Calculation Steps
+
+#### Step 1: Solar Geometry
+
+Calculate solar zenith angle (θ) based on:
+- Latitude and longitude
+- Date and time (timezone-aware)
+- Solar declination and hour angle
+
+```typescript
+θ_deg = calculateSolarZenithAngle(lat, lon, timestamp)
+```
+
+**Validation**: If θ > 90° (sun below horizon), set all solar radiation to zero.
+
+#### Step 2: Atmospheric Properties
+
+##### Vapor Pressure (Buck Formula)
+```
+e_sat = 611.2 × exp((17.62 × T_a) / (243.12 + T_a))
+e_a = (RH / 100) × e_sat
+```
+
+##### Atmospheric Emissivity
+```
+ε_atm = 0.575 × (e_a / 100)^0.143
+```
+
+Where `e_a` is in hPa.
+
+##### Direct Beam Fraction
+```
+f_dir = SR_direct / (SR_direct + SR_diffuse)
+```
+
+#### Step 3: Radiation Components
+
+##### Shortwave Radiation on Globe
+```
+SR_g = 0.5 × (1 - α_globe) × [
+  (1 - f_dir) × SR_down +           // Diffuse from sky
+  f_dir × SR_down / (2 × cos(θ)) +  // Direct beam
+  α_surface × SR_down                // Reflected from ground
+]
+```
+
+##### Longwave Radiation on Globe
+```
+LR_down = ε_atm × σ × T_a⁴
+LR_up = σ × T_a⁴
+LR_g = 0.5 × ε_globe × (LR_down + LR_up)
+```
+
+##### Shortwave Radiation on Wick (Cylinder Geometry)
+```
+SR_w = (1 - α_wick) × [
+  (1 + 0.007/(4×L_wick)) × (1 - f_dir) × SR_down +
+  (tan(θ)/π + 0.007/(4×L_wick)) × f_dir × SR_down +
+  α_surface × SR_down
+]
+```
+
+##### Longwave Radiation on Wick
+```
+LR_w = 0.5 × ε_wick × (LR_down + LR_up)
+```
+
+#### Step 4: Air Properties
+
+Calculate at pressure P and temperature T_a:
+
+##### Air Density
+```
+ρ = P / (R_air × T_a)
+```
+Where R_air = 287.05 J/(kg·K)
+
+##### Dynamic Viscosity (Sutherland's Law)
+```
+μ = μ_ref × (T/T_ref)^1.5 × (T_ref + S) / (T + S)
+```
+
+##### Thermal Conductivity
+```
+k = c_p × μ / Pr
+```
+Where Pr ≈ 0.71 (Prandtl number for air)
+
+##### Mass Diffusivity (Water Vapor in Air)
+```
+D = D_ref × (T/T_ref)^1.75 × (P_ref/P)
+```
+
+##### Wind Speed Adjustment (10m to 2m height)
+```
+u_2m = u_10m × (2/10)^0.15
+```
+
+#### Step 5: Heat Transfer Coefficients
+
+##### Globe Convection (Churchill Correlation for Sphere)
+```
+Re_globe = ρ × u_2m × D_globe / μ
+Nu_globe = 2.0 + 0.6 × Re_globe^0.5 × Pr^(1/3)
+h_cg = (k / D_globe) × Nu_globe
+```
+
+##### Globe Radiation (Linearized)
+```
+h_rg = 4 × σ × ε_globe × T_a³
+```
+
+##### Wick Convection (Morgan Correlation for Cylinder)
+```
+Re_wick = ρ × u_2m × D_wick / μ
+Nu_wick = 0.281 × Re_wick^0.6 × Pr^(1/3)
+h_cw = (k / D_wick) × Nu_wick
+```
+
+##### Wick Radiation
+```
+h_rw = 4 × σ × ε_wick × T_a³
+```
+
+##### Wick Evaporation
+```
+Sc = μ / (ρ × D)    // Schmidt number
+k_x = (ρ × D) / (M_air × D_wick) × 0.281 × Re_wick^0.6 × Sc^(1/3)
+β = k_x × M_H2O × ΔH_vap / P
+h_ew = β × de_sat/dT
+```
+
+Where:
+- `M_air` = 0.02897 kg/mol (molar mass of air)
+- `M_H2O` = 0.018015 kg/mol (molar mass of water)
+- `ΔH_vap` = 2,453,000 J/kg (latent heat of vaporization)
+- `de_sat/dT` = vapor pressure derivative at mean wick temperature
+
+#### Step 6: Temperature Calculations
+
+##### Black Globe Temperature
+```typescript
+T_g = Ta + (SRg + LRg - σ × ε × Ta⁴) / (h_cg + h_rg)
+```
+
+##### Natural Wet Bulb Temperature
+```typescript
+psychrometric_term = β × (e_sat(Ta) - e_a)
+radiation_balance = SRw + LRw - σ × ε × Ta⁴
+T_nw = Ta + (radiation_balance - psychrometric_term) / (h_ew + h_cw + h_rw)
+```
+
+#### Step 7: Final WBGT
+```typescript
+WBGT = 0.7 × T_nw + 0.2 × T_g + 0.1 × Ta
+```
+
+### Required Input Data
+
+| Parameter | Unit | Source | Notes |
+|-----------|------|--------|-------|
+| Air Temperature (T_a) | °C | WeatherZone | Dry bulb temperature |
+| Wet Bulb Temperature (T_w) | °C | Open-Meteo | Psychrometric wet bulb |
+| Relative Humidity (RH) | % | WeatherZone | 0-100 scale |
+| Atmospheric Pressure (P) | hPa | WeatherZone | Surface pressure |
+| Wind Speed (u_10m) | m/s | WeatherZone | At 10m height |
+| Shortwave Radiation (SR_down) | W/m² | Open-Meteo | Total downward shortwave |
+| Direct Radiation (SR_direct) | W/m² | Open-Meteo | Direct beam component |
+| Diffuse Radiation (SR_diffuse) | W/m² | Open-Meteo | Diffuse sky component |
+| Latitude | degrees | User input | -90 to 90 |
+| Longitude | degrees | User input | -180 to 180 |
+| Timestamp | ISO 8601 | Data record | With timezone |
+
+### Constants Used
+
+```typescript
+// Physical constants
+STEFAN_BOLTZMANN = 5.67e-8;          // W/(m²·K⁴)
+GAS_CONSTANT_AIR = 287.05;           // J/(kg·K)
+MOLECULAR_WEIGHT_WATER = 0.018015;   // kg/mol
+MOLECULAR_WEIGHT_AIR = 0.02897;      // kg/mol
+LATENT_HEAT_VAPORIZATION = 2453000;  // J/kg
+
+// Globe properties
+GLOBE_DIAMETER = 0.0508;             // m (2 inches)
+GLOBE_EMISSIVITY = 0.95;
+GLOBE_ALBEDO = 0.05;
+
+// Wick properties
+WICK_DIAMETER = 0.007;               // m
+WICK_LENGTH = 0.0254;                // m (1 inch)
+WICK_EMISSIVITY = 0.95;
+WICK_ALBEDO = 0.4;
+
+// Surface properties
+SURFACE_ALBEDO = 0.45;               // Typical ground reflectance
+```
+
+### Output Structure
+
+```typescript
+interface KongWBGTResult {
+  kong_wbgt: number;                 // Final WBGT value (°C)
+  black_globe_temp: number;          // T_g (°C)
+  natural_wet_bulb_temp: number;     // T_nw (°C)
+  solar_zenith_angle: number;        // θ (degrees)
+  esi: number;                       // Environmental Stress Index
+  intermediate: {
+    vapor_pressure: number;          // e_a (Pa)
+    atmospheric_emissivity: number;  // ε_atm
+    direct_fraction: number;         // f_dir
+  };
+}
+```
+
+### Environmental Stress Index (ESI)
+
+Supplementary heat stress indicator calculated alongside WBGT:
+
+```
+ESI = 0.62×T_a - 0.007×RH + 0.002×SR + 0.0043×(T_a×RH) - 0.078/(0.1 + SR)
+```
+
+**Interpretation**:
+- ESI < 20: Low heat stress
+- ESI 20-25: Moderate heat stress
+- ESI 25-30: High heat stress
+- ESI > 30: Extreme heat stress
+
+### Validation & Quality Checks
+
+1. **Physical Plausibility**:
+   - T_g > T_a (globe warmer than air under solar radiation)
+   - T_nw < T_a (wet bulb cooler due to evaporation)
+   - T_a - 10°C < T_nw < T_a
+
+2. **Solar Validation**:
+   - If θ > 90°, all SR components = 0
+   - SR_direct + SR_diffuse ≈ SR_down (within 10%)
+   - SR values in range [0, 1200] W/m²
+
+3. **Temporal Consistency**:
+   - WBGT should not change >5°C between consecutive hours
+   - Gradual transitions at sunrise/sunset
+
+### Comparison with Simplified Methods
+
+| Method | Inputs | Solar | Accuracy | Speed |
+|--------|--------|-------|----------|-------|
+| Simple WBGT | Ta, RH | No | ±5°C | Fast |
+| eWBGT | Ta, RH, SR | Basic | ±3°C | Fast |
+| Kong WBGT | Ta, Tw, RH, P, u, SR components, location, time | Full physics | ±0.5°C | Medium |
+| ISO 7243 Measured | Physical instruments (globe, wet bulb) | N/A | Reference | Slow (15+ min equilibration) |
+
+**Kong WBGT provides the best balance of accuracy and computational efficiency for historical data analysis.**
+
+### Implementation in WeatherZone Pipeline
+
+```typescript
+// Pseudo-code for integration
+async function calculateHistoricalWBGT(
+  wzObs: WeatherZoneObservation,
+  omRad: OpenMeteoRadiation,
+  station: WeatherStation
+): Promise<KongWBGTResult> {
+
+  // 1. Extract WeatherZone data
+  const Ta = wzObs.temperature;
+  const RH = wzObs.humidity;
+  const P = wzObs.pressure;
+  const u10m = wzObs.windSpeed / 3.6;  // km/h to m/s
+
+  // 2. Extract Open-Meteo radiation
+  const SRdown = omRad.solarRadiation;
+  const SRdirect = omRad.directRadiation;
+  const SRdiffuse = omRad.diffuseRadiation;
+  const Tw = omRad.wetBulbTemp;
+
+  // 3. Calculate Kong WBGT
+  return calculateKongWBGTPipeline(
+    Ta, Tw, RH, P, u10m,
+    SRdown, SRdirect, SRdiffuse,
+    station.latitude,
+    station.longitude,
+    wzObs.timestamp
+  );
+}
+```
+
+### Error Handling
+
+**Missing Data Scenarios**:
+
+1. **Missing Wet Bulb Temperature**: Estimate from Ta and RH
+   ```
+   Tw_estimated = Ta - ((100 - RH) / 5)  // Rough approximation
+   ```
+
+2. **Missing Solar Radiation**: Use solar geometry estimation
+   ```
+   SR_estimated = 1000 × cos(θ) × clearness_factor
+   ```
+
+3. **Missing Pressure**: Use standard atmospheric model
+   ```
+   P = 1013.25 × (1 - 0.0065 × elevation / 288.15)^5.255
+   ```
+
+4. **Missing Wind Speed**: Use typical calm conditions
+   ```
+   u10m = 1.0 m/s  // Light air
+   ```
+
+**Quality Flags**:
+- `complete`: All inputs available, high confidence
+- `partial`: Some inputs estimated, medium confidence
+- `estimated`: Major inputs estimated, low confidence
+
 ## System Architecture
 
 ### Deployment Environment
