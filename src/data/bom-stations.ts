@@ -242,10 +242,10 @@ export const SYDNEY_BOM_STATIONS: BOMStation[] = [
   {
     name: "Sydney Olympic Park AWS (Archery Centre)",
     code: "95765",
-    productId: "IDN60901",
+    productId: "IDN60801",
     latitude: -33.83,
     longitude: 151.07,
-    jsonUrl: "http://www.bom.gov.au/fwo/IDN60901/IDN60901.95765.json"
+    jsonUrl: "https://www.bom.gov.au/fwo/IDN60801/IDN60801.95765.json"
   },
   {
     name: "Terrey Hills AWS",
