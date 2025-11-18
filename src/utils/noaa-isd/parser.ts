@@ -18,7 +18,7 @@ export class ISDParser {
    * Parse control section (positions 1-60)
    * Contains timestamp and station metadata
    */
-  private parseControlSection(line: string): {
+  parseControlSection(line: string): {
     timestamp: string;
     stationId: string;
   } | null {
@@ -52,7 +52,7 @@ export class ISDParser {
    * Parse mandatory data section (positions 61-105)
    * Contains core meteorological observations
    */
-  private parseMandatoryData(line: string): Partial<ISDObservation> {
+  parseMandatoryData(line: string): Partial<ISDObservation> {
     const obs: Partial<ISDObservation> = {
       quality: {
         temperature: '9',
@@ -124,7 +124,7 @@ export class ISDParser {
    * Calculate relative humidity from temperature and dew point
    * Using Magnus formula
    */
-  private calculateRelativeHumidity(temp: number, dewPoint: number): number {
+  calculateRelativeHumidity(temp: number, dewPoint: number): number {
     const a = 17.27;
     const b = 237.7;
 
@@ -138,7 +138,7 @@ export class ISDParser {
    * Parse additional data section (variable length after position 105)
    * Looking for cloud cover data
    */
-  private parseAdditionalData(line: string): Partial<ISDObservation> {
+  parseAdditionalData(line: string): Partial<ISDObservation> {
     const obs: Partial<ISDObservation> = {};
 
     // Additional data starts at position 106
@@ -169,9 +169,18 @@ export class ISDParser {
   }
 
   /**
+   * Check if a single quality flag is acceptable
+   * Quality flags: 0-2 are good, 3-5 are questionable, 6-9 are bad
+   */
+  isQualityAcceptable(qualityFlag: string): boolean {
+    const quality = parseInt(qualityFlag);
+    return quality >= 0 && quality <= 2;
+  }
+
+  /**
    * Check if observation quality is acceptable
    */
-  private isQualityAcceptable(obs: ISDObservation): boolean {
+  private isObservationQualityAcceptable(obs: ISDObservation): boolean {
     // Quality flags: 0-2 are good, 3-5 are questionable, 6-9 are bad
     const tempQuality = parseInt(obs.quality.temperature || '9');
     const dewQuality = parseInt(obs.quality.dew_point || '9');
@@ -183,6 +192,28 @@ export class ISDParser {
     const hasPressGood = obs.sea_level_pressure !== undefined && pressureQuality <= 2;
 
     return hasTempGood && (hasDewGood || hasPressGood);
+  }
+
+  /**
+   * Parse a single line of ISD data with date filtering
+   * Returns null if line is outside date range or invalid
+   */
+  parseISDLine(line: string, startDate: string, endDate: string): ISDObservation | null {
+    const obs = this.parseLine(line);
+    if (!obs) {
+      return null;
+    }
+
+    // Check date range
+    const start = new Date(startDate).getTime();
+    const end = new Date(endDate + 'T23:59:59Z').getTime();
+    const obsTime = new Date(obs.timestamp).getTime();
+
+    if (obsTime < start || obsTime > end) {
+      return null;
+    }
+
+    return obs;
   }
 
   /**
@@ -235,11 +266,18 @@ export class ISDParser {
   }
 
   /**
+   * Parse a single ISD file content string and return structured data
+   */
+  parseISDFile(fileContent: string, startDate: string, endDate: string): ISDHourlyData {
+    return this.parseISDFiles([fileContent], undefined as any, startDate, endDate);
+  }
+
+  /**
    * Parse ISD file content(s) and return structured data
    */
   parseISDFiles(
     fileContents: string[],
-    station: ISDStation,
+    station: ISDStation | undefined,
     startDate: string,
     endDate: string
   ): ISDHourlyData {
@@ -267,7 +305,7 @@ export class ISDParser {
     const filtered = this.filterByDateRange(allObservations, startDate, endDate);
 
     // Filter by quality
-    const goodQuality = filtered.filter(obs => this.isQualityAcceptable(obs));
+    const goodQuality = filtered.filter(obs => this.isObservationQualityAcceptable(obs));
 
     // Determine overall data quality
     const qualityRatio = filtered.length > 0 ? goodQuality.length / filtered.length : 0;
@@ -280,13 +318,14 @@ export class ISDParser {
       dataQuality = 'poor';
     }
 
-    const stationId = getStationId(station);
+    const stationId = station ? getStationId(station) : (filtered.length > 0 ? filtered[0].timestamp.substring(0, 12) : 'unknown');
+    const stationName = station ? station.name : 'unknown';
 
     console.log(`[ISD-PARSE] Parsed ${filtered.length} observations, ${goodQuality.length} good quality (${(qualityRatio * 100).toFixed(1)}%)`);
 
     return {
       station_id: stationId,
-      station_name: station.name,
+      station_name: stationName,
       observations: goodQuality,
       data_quality: dataQuality,
       missing_count: filtered.length - goodQuality.length,

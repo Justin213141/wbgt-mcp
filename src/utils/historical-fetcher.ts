@@ -245,13 +245,16 @@ export class HistoricalFetcher {
 
     console.log(`[HISTORIC] Fetching data for ${startDate} to ${endDate} (timezone: ${timezone})`);
 
-    // Priority 1a: Try NOAA ISD observational data (Sydney-optimized, 99% use case)
-    const isdData = await this.fetchNOAAISD(startDate, endDate, latitude, longitude, timezone);
+    // **PERFORMANCE OPTIMIZATION: Parallel fetching**
+    // Fetch both NOAA ISD (Priority 1a) and Satellite radiation (Priority 1b) in parallel
+    console.log(`[HISTORIC] Starting parallel fetch: ISD weather + satellite radiation`);
+    const [isdData, satelliteData] = await Promise.all([
+      this.fetchNOAAISD(startDate, endDate, latitude, longitude, timezone),
+      this.fetchSatelliteRadiation(startDate, endDate, latitude, longitude)
+    ]);
+
     let weatherSource = 'none';
     let stationInfo: { name: string; distance: number } | null = null;
-
-    // Parallel fetch: Satellite radiation (Priority 1b) + weather data
-    const satelliteData = await this.fetchSatelliteRadiation(startDate, endDate, latitude, longitude);
 
     let times: string[];
     let temps: number[];
