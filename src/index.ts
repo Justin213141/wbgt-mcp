@@ -26,6 +26,10 @@ import {
   calculateAT,
 } from './calculations';
 
+// Import station finder utilities
+import { determineDataSource } from './utils/station-finder';
+import { DEFAULT_BOM_STATION } from './data/bom-stations';
+
 // --- Type Definitions ---
 interface SRData {
   hourly?: {
@@ -183,35 +187,55 @@ async function fetchKongWBGTJapan(
 }
 
 // --- Fetch functions ---
-async function fetchObservations(startDate?: string, endDate?: string): Promise<ObservationsResponse> {
+async function fetchObservations(
+  startDate?: string,
+  endDate?: string,
+  latitude?: number,
+  longitude?: number,
+  bomUrl?: string | null
+): Promise<ObservationsResponse> {
   const now = new Date();
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
+  // Use provided coordinates or default to Sydney
+  const lat = latitude ?? SYDNEY_LAT;
+  const lon = longitude ?? SYDNEY_LON;
 
   // Observations endpoint only returns past 72 hours - always fetch recent with Kong parameters
-  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3`;
-  const bomUrl = "https://www.bom.gov.au/fwo/IDN60801/IDN60801.95765.json";
+  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3`;
 
-  const [srResponse, bomResponse] = await Promise.all([
+  // Use provided BOM URL or default station
+  const defaultBomUrl = DEFAULT_BOM_STATION.jsonUrl;
+  const finalBomUrl = bomUrl !== null ? (bomUrl ?? defaultBomUrl) : null;
+
+  // Fetch OpenMeteo data and optionally BOM data
+  const fetchPromises: Promise<Response>[] = [
     fetch(srUrl, {
       cf: {
         cacheTtl: 300, // 5 minutes cache
         cacheEverything: true
       }
-    }),
-    fetch(bomUrl)
-  ]);
+    })
+  ];
 
+  // Only fetch BOM data if we have a URL (station within range)
+  if (finalBomUrl) {
+    fetchPromises.push(fetch(finalBomUrl));
+  }
+
+  const responses = await Promise.all(fetchPromises);
+  const srResponse = responses[0];
+  const bomResponse = responses[1] ?? null;
 
   if (srResponse.status !== 200) {
   }
-  if (bomResponse.status !== 200) {
+  if (bomResponse && bomResponse.status !== 200) {
   }
 
   return {
     type: 'recent',
-    srData: srResponse.status === 200 ? await srResponse.json() as SRData : null,
-    bomData: bomResponse.status === 200 ? await bomResponse.json() as BOMData : null
+    srData: srResponse.status === 200 ? await srResponse.json() as SRData : undefined,
+    bomData: bomResponse && bomResponse.status === 200 ? await bomResponse.json() as BOMData : undefined
   };
 }
 
@@ -1136,22 +1160,45 @@ export class WBGTServerMCP extends McpAgent {
       end_time: z.string()
         .optional()
         .describe("Optional end time in ISO format. When both start_time and end_time provided, returns max WBGT values during the activity window"),
+      latitude: z.number()
+        .optional()
+        .describe("Optional latitude (default: Sydney Olympic Park). Automatically selects nearest BOM station within 50km, or uses OpenMeteo if none available"),
+      longitude: z.number()
+        .optional()
+        .describe("Optional longitude (default: Sydney Olympic Park). Automatically selects nearest BOM station within 50km, or uses OpenMeteo if none available"),
     };
 
     this.server.tool(
       "get_observations",
-      "Get past 72 hours of WBGT observations for Sydney using Kong method. Can also calculate maximum WBGT during a specific activity time window",
+      "Get past 72 hours of WBGT observations using Kong method. Supports custom locations - automatically selects nearest BOM station within 50km or uses OpenMeteo. Can also calculate maximum WBGT during a specific activity time window",
       observationsSchema,
       async (params: any) => {
         try {
-          const { start_time, end_time } = params;
-          const data = await fetchObservations();
+          const { start_time, end_time, latitude, longitude } = params;
 
-          if (!data.srData || !data.bomData) {
-            throw new Error('Missing weather data from API sources');
+          // Determine data source based on location
+          let dataSource: { station: any; source: string; distance?: number } | null = null;
+          let bomUrl: string | null = null;
+
+          if (latitude !== undefined && longitude !== undefined) {
+            dataSource = determineDataSource(latitude, longitude);
+            bomUrl = dataSource.station?.jsonUrl ?? null;
           }
 
-          const observations = parseObservationsKong(data.srData, data.bomData, start_time, end_time);
+          const data = await fetchObservations(
+            undefined,
+            undefined,
+            latitude,
+            longitude,
+            bomUrl
+          );
+
+          if (!data.srData) {
+            throw new Error('Missing OpenMeteo weather data');
+          }
+
+          // BOM data is optional (may not be available if no station in range)
+          const observations = parseObservationsKong(data.srData, data.bomData ?? null, start_time, end_time);
 
           const note = start_time
             ? `Max WBGT conditions during activity from ${start_time} to ${end_time}`
@@ -1164,6 +1211,8 @@ export class WBGTServerMCP extends McpAgent {
                 success: true,
                 data: observations,
                 count: observations.length,
+                source: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+                distance_km: dataSource?.distance,
                 note
               }, null, 2)
             }]
@@ -1296,7 +1345,7 @@ function errorResponse(
 
 // Handler: GET /api/current
 async function handleGetCurrent(corsHeaders: Record<string, string>): Promise<Response> {
-  const data = await fetchObservations();
+  const data = await fetchObservations(undefined, undefined, undefined, undefined, undefined);
   const observations = parseObservations(data);
   return jsonResponse({
     success: true,
@@ -1324,12 +1373,27 @@ async function handleGetForecast(corsHeaders: Record<string, string>): Promise<R
 async function handleGetObservations(url: URL, corsHeaders: Record<string, string>): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
-  const data = await fetchObservations();
-  const observations = parseObservationsKong(data.srData!, data.bomData!, start_time || undefined, end_time || undefined);
+  const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
+  const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : undefined;
+
+  // Determine data source based on location
+  let dataSource: { station: any; source: string; distance?: number } | null = null;
+  let bomUrl: string | null = null;
+
+  if (latitude !== undefined && longitude !== undefined) {
+    dataSource = determineDataSource(latitude, longitude);
+    bomUrl = dataSource.station?.jsonUrl ?? null;
+  }
+
+  const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
+  const observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time || undefined, end_time || undefined);
+
   return jsonResponse({
     success: true,
     data: observations,
     count: observations.length,
+    source: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+    distance_km: dataSource?.distance,
     timestamp: new Date().toISOString(),
     note: start_time ? `Max WBGT conditions during activity from ${start_time} to ${end_time}` : "Past 72-hour WBGT observations (Kong method)"
   }, 200, corsHeaders);
@@ -1480,6 +1544,35 @@ paths:
       summary: Get past 72 hours of WBGT observations
       tags:
         - Historical Data
+      parameters:
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional start time in ISO format for activity-specific WBGT maximum
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional end time in ISO format for activity window
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Latitude for location (automatically selects nearest BOM station within 50km or uses OpenMeteo)
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Longitude for location (automatically selects nearest BOM station within 50km or uses OpenMeteo)
       responses:
         '200':
           description: WBGT observations retrieved successfully

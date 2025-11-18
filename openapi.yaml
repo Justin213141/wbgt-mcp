@@ -97,7 +97,9 @@ paths:
   /api/observations:
     get:
       summary: Get past 72 hours of WBGT observations
-      description: Retrieves WBGT observations from the past 72 hours using Kong method. Optionally returns maximum WBGT during a specific activity time window.
+      description: |
+        Retrieves WBGT observations from the past 72 hours using Kong method. Optionally returns maximum WBGT during a specific activity time window.
+        Supports custom locations - automatically selects the nearest BOM station within 50km or uses OpenMeteo data if no station is available.
       tags:
         - Historical Data
       operationId: getObservations
@@ -116,6 +118,22 @@ paths:
             type: string
             format: date-time
           required: false
+        - name: latitude
+          in: query
+          description: Latitude of the location (default Sydney Olympic Park). Automatically selects nearest BOM station within 50km or uses OpenMeteo if none available
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+          required: false
+        - name: longitude
+          in: query
+          description: Longitude of the location (default Sydney Olympic Park). Automatically selects nearest BOM station within 50km or uses OpenMeteo if none available
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+          required: false
       responses:
         '200':
           description: WBGT observations retrieved successfully
@@ -132,6 +150,14 @@ paths:
                       $ref: '#/components/schemas/WBGTData'
                   count:
                     type: integer
+                  source:
+                    type: string
+                    description: Data source - either BOM station name or 'OpenMeteo'
+                    example: Sydney Olympic Park AWS (Archery Centre)
+                  distance_km:
+                    type: number
+                    description: Distance in km to nearest BOM station (only if BOM station used)
+                    example: 2.5
                   timestamp:
                     type: string
                     format: date-time
