@@ -164,26 +164,16 @@ function parseBOMTime(bomTime: string): string {
 }
 
 // --- Kong WBGT Data Fetching ---
-// Wrapper function using unified fetcher (eliminates duplicate Sydney-specific logic)
+// Unified wrapper function for historical WBGT data (works in local time)
 async function fetchKongWBGT(
   startDate: string,
   endDate: string,
   latitude: number = SYDNEY_LAT,
-  longitude: number = SYDNEY_LON
+  longitude: number = SYDNEY_LON,
+  timezone: string = 'auto'
 ): Promise<any[]> {
   const fetcher = new HistoricalFetcher();
-  return fetcher.fetchKongWBGTByTimezone(startDate, endDate, latitude, longitude, 10, true, 'Australia/Sydney');
-}
-
-async function fetchKongWBGTJapan(
-  startDate: string,
-  endDate: string,
-  latitude: number,
-  longitude: number
-): Promise<any[]> {
-  // Wrapper using unified fetcher (eliminates duplicate Japan-specific logic)
-  const fetcher = new HistoricalFetcher();
-  return fetcher.fetchKongWBGTByTimezone(startDate, endDate, latitude, longitude, 9, false, 'Asia/Tokyo');
+  return fetcher.fetchKongWBGTByTimezone(startDate, endDate, latitude, longitude, timezone);
 }
 
 // --- Fetch functions ---
@@ -1245,19 +1235,23 @@ export class WBGTServerMCP extends McpAgent {
       longitude: z.number()
         .optional()
         .describe("Optional longitude (default: 151.1254 for Sydney)"),
+      timezone: z.string()
+        .optional()
+        .describe("Optional timezone (default: 'auto' for local time based on coordinates). Use 'auto' for automatic timezone detection, or specify IANA timezone like 'Australia/Sydney', 'Asia/Tokyo', 'America/New_York', etc."),
     };
 
     this.server.tool(
       "get_historic_observations",
-      "Get historical WBGT observations using Kong method with detailed radiation and heat transfer modeling. Supports custom locations.",
+      "Get historical WBGT observations using Kong method with satellite solar radiation priority and archive fallback. Supports global locations with automatic timezone detection. All timestamps returned in local time. Solar radiation prioritizes satellite data (observational) over archive data (model).",
       historicObservationsSchema,
       async (params: any) => {
-        const { start_date, end_date, latitude, longitude } = params;
+        const { start_date, end_date, latitude, longitude, timezone } = params;
         const lat = latitude || SYDNEY_LAT;
         const lon = longitude || SYDNEY_LON;
+        const tz = timezone || 'auto';
 
         try {
-          const kongData = await fetchKongWBGT(start_date, end_date, lat, lon);
+          const kongData = await fetchKongWBGT(start_date, end_date, lat, lon, tz);
 
           return {
             content: [{
@@ -1267,7 +1261,8 @@ export class WBGTServerMCP extends McpAgent {
                 data: kongData,
                 count: kongData.length,
                 location: { latitude: lat, longitude: lon },
-                note: "Kong WBGT historical observations using zero-iteration method with detailed radiation and heat transfer modeling"
+                timezone: tz,
+                note: "Kong WBGT historical observations with satellite solar radiation (observational) prioritized over archive (model). All timestamps in local time."
               }, null, 2)
             }]
           };
@@ -1405,6 +1400,7 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
   const end_date = url.searchParams.get('end_date');
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : SYDNEY_LAT;
   const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : SYDNEY_LON;
+  const timezone = url.searchParams.get('timezone') || 'auto';
 
   if (!start_date || !end_date) {
     return errorResponse(
@@ -1414,22 +1410,28 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
       corsHeaders,
       {
         required: ['start_date', 'end_date'],
-        optional: ['latitude', 'longitude'],
-        format: 'YYYY-MM-DD',
-        note: 'end_date cannot be today'
+        optional: ['latitude', 'longitude', 'timezone'],
+        format: 'YYYY-MM-DD for dates',
+        note: 'end_date cannot be today. timezone defaults to "auto" (local time for coordinates). All dates/times in local time.',
+        examples: {
+          'Sydney': 'timezone=auto&latitude=-33.8018&longitude=151.1254',
+          'Tokyo': 'timezone=auto&latitude=35.6762&longitude=139.6503'
+        }
       },
       url.pathname
     );
   }
 
   try {
-    const kongData = await fetchKongWBGT(start_date, end_date, latitude, longitude);
+    const kongData = await fetchKongWBGT(start_date, end_date, latitude, longitude, timezone);
     return jsonResponse({
       success: true,
       data: kongData,
       count: kongData.length,
       timestamp: new Date().toISOString(),
-      location: { latitude, longitude }
+      location: { latitude, longitude },
+      timezone: timezone,
+      note: 'All timestamps in local time. Solar radiation prioritizes satellite data with archive fallback.'
     }, 200, corsHeaders);
   } catch (error: any) {
     return errorResponse(
@@ -1440,66 +1442,14 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
       {
         reason: error?.message || 'Unknown error',
         location: { latitude, longitude },
-        dateRange: { start_date, end_date }
-      },
-      url.pathname
-    );
-  }
-}
-
-// Handler: GET /api/historic_observations_japan
-async function handleGetHistoricJapan(url: URL, corsHeaders: Record<string, string>): Promise<Response> {
-  const start_date = url.searchParams.get('start_date');
-  const end_date = url.searchParams.get('end_date');
-  const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : null;
-  const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : null;
-
-  if (!start_date || !end_date || latitude === null || longitude === null) {
-    return errorResponse(
-      'MISSING_REQUIRED_PARAMETERS',
-      'Missing required parameters for Japan location',
-      400,
-      corsHeaders,
-      {
-        required: ['start_date', 'end_date', 'latitude', 'longitude'],
-        format: 'YYYY-MM-DD for dates',
-        examples: {
-          latitude: 35.6762,
-          longitude: 139.6503,
-          start_date: '2025-10-01',
-          end_date: '2025-10-26'
-        }
-      },
-      url.pathname
-    );
-  }
-
-  try {
-    const kongData = await fetchKongWBGTJapan(start_date, end_date, latitude, longitude);
-    return jsonResponse({
-      success: true,
-      data: kongData,
-      count: kongData.length,
-      timestamp: new Date().toISOString(),
-      location: { latitude, longitude },
-      timezone: 'JST (UTC+9)'
-    }, 200, corsHeaders);
-  } catch (error: any) {
-    return errorResponse(
-      'FETCH_FAILED',
-      'Failed to fetch historic observations for Japan',
-      500,
-      corsHeaders,
-      {
-        reason: error?.message || 'Unknown error',
-        location: { latitude, longitude },
         dateRange: { start_date, end_date },
-        timezone: 'JST (UTC+9)'
+        timezone: timezone
       },
       url.pathname
     );
   }
 }
+
 
 // Handler: GET /health
 function handleHealth(corsHeaders: Record<string, string>): Response {
@@ -1578,7 +1528,7 @@ paths:
           description: WBGT observations retrieved successfully
   /api/v1/historic_observations:
     get:
-      summary: Get historical WBGT observations
+      summary: Get historical WBGT observations with optional timezone
       tags:
         - Historical Data
       parameters:
@@ -1594,17 +1544,25 @@ paths:
           schema:
             type: string
             format: date
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: timezone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: auto
       responses:
         '200':
-          description: Historical WBGT observations retrieved successfully
-  /api/v1/historic_observations_japan:
-    get:
-      summary: Get historical WBGT observations for Japan
-      tags:
-        - Historical Data
-      responses:
-        '200':
-          description: Historical WBGT observations for Japan retrieved successfully`;
+          description: Historical WBGT observations retrieved successfully`;
 
   return new Response(openApiYaml, {
     headers: {
@@ -1626,12 +1584,11 @@ function handleApiRoot(corsHeaders: Record<string, string>): Response {
       'GET /api/current': 'Current WBGT conditions in Sydney',
       'GET /api/forecast': '72-hour WBGT forecast for Sydney',
       'GET /api/observations': 'Past 72-hour observations (Kong method)',
-      'GET /api/historic_observations': 'Historical WBGT data (Kong method)',
-      'GET /api/historic_observations_japan': 'Historical data for Japan (JST)',
+      'GET /api/historic_observations': 'Historical WBGT data (Kong method) with timezone support',
       'GET /api/health': 'Health check'
     },
     documentation: {
-      note: 'This is the recommended API version.',
+      note: 'This is the recommended API version. historic_observations now supports global locations with timezone=auto parameter.',
       endpoint: '/api (primary)',
       openapi: 'GET /api/docs/openapi.yaml or /api/docs/openapi.json'
     }
@@ -1644,21 +1601,19 @@ function handleApiRootV1(corsHeaders: Record<string, string>): Response {
     service: 'WBGT Sydney Runner API',
     version: '1.0.0 (legacy path)',
     deprecated: true,
-    note: 'The /api/v1 path is deprecated. Please use /api instead.',
+    note: 'The /api/v1 path is deprecated. Please use /api instead. The historic_observations_japan endpoint has been consolidated into historic_observations with timezone parameter.',
     endpoints: {
       'GET /api/current': 'Current WBGT conditions (RECOMMENDED)',
       'GET /api/forecast': '72-hour WBGT forecast (RECOMMENDED)',
       'GET /api/observations': 'Past 72-hour observations (RECOMMENDED)',
-      'GET /api/historic_observations': 'Historical WBGT data (RECOMMENDED)',
-      'GET /api/historic_observations_japan': 'Historical data for Japan (RECOMMENDED)',
+      'GET /api/historic_observations': 'Historical WBGT data with timezone support (RECOMMENDED)',
       'GET /api/v1/current': 'Current WBGT conditions (deprecated)',
       'GET /api/v1/forecast': '72-hour WBGT forecast (deprecated)',
       'GET /api/v1/observations': 'Past 72-hour observations (deprecated)',
       'GET /api/v1/historic_observations': 'Historical WBGT data (deprecated)',
-      'GET /api/v1/historic_observations_japan': 'Historical data for Japan (deprecated)',
       'GET /api/health': 'Health check'
     },
-    migration: 'Update your integration to use /api instead of /api/v1'
+    migration: 'Update your integration to use /api instead of /api/v1. Use timezone parameter for location-specific timezones.'
   }, 200, corsHeaders);
 }
 
@@ -1692,7 +1647,6 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
     if (pathname === '/api/forecast' && request.method === 'GET') return await handleGetForecast(corsHeaders);
     if (pathname === '/api/observations' && request.method === 'GET') return await handleGetObservations(url, corsHeaders);
     if (pathname === '/api/historic_observations' && request.method === 'GET') return await handleGetHistoricObservations(url, corsHeaders);
-    if (pathname === '/api/historic_observations_japan' && request.method === 'GET') return await handleGetHistoricJapan(url, corsHeaders);
     if (pathname === '/api/health' && request.method === 'GET') return handleHealth(corsHeaders);
     if (pathname === '/api' && request.method === 'GET') return handleApiRoot(corsHeaders);
 
@@ -1714,8 +1668,7 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
           '/api/current': { get: { summary: 'Get current WBGT conditions', tags: ['Current Conditions'] } },
           '/api/forecast': { get: { summary: 'Get 72-hour WBGT forecast', tags: ['Forecast'] } },
           '/api/observations': { get: { summary: 'Get past 72 hours of WBGT observations', tags: ['Historical Data'] } },
-          '/api/historic_observations': { get: { summary: 'Get historical WBGT observations', tags: ['Historical Data'] } },
-          '/api/historic_observations_japan': { get: { summary: 'Get historical WBGT observations for Japan', tags: ['Historical Data'] } }
+          '/api/historic_observations': { get: { summary: 'Get historical WBGT observations with timezone support', tags: ['Historical Data'] } }
         }
       }, null, 2), {
         headers: {
@@ -1742,10 +1695,6 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
     }
     if (pathname === '/api/v1/historic_observations' && request.method === 'GET') {
       const response = await handleGetHistoricObservations(url, addDeprecationHeader(corsHeaders, '2'));
-      return response;
-    }
-    if (pathname === '/api/v1/historic_observations_japan' && request.method === 'GET') {
-      const response = await handleGetHistoricJapan(url, addDeprecationHeader(corsHeaders, '2'));
       return response;
     }
     if (pathname === '/api/v1/health' && request.method === 'GET') return handleHealth(corsHeaders);
