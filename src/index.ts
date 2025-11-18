@@ -894,27 +894,16 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
   // Try to process BOM observations first if available
   if (bomObs.length > 0) {
     console.log(`[PARSE] Processing ${bomObs.length} BOM observations`);
-    const now = new Date();
-    let futureDataSkipped = 0;
 
     results = bomObs
       .map((obs: any, idx: number) => {
         const timestamp = normalizeBOMTimestamp(obs.local_date_time);
-
-        // Filter out future data from BOM observations
-        const obsDate = new Date(timestamp);
-        if (obsDate > now) {
-          futureDataSkipped++;
-          return null;
-        }
-
         return processBOMObservationKong(obs, timestamp, omMap, cloudMap, uvMap, idx);
       })
       .filter((result): result is any => result !== null);
 
-    if (futureDataSkipped > 0) {
-      console.log(`[PARSE] Filtered out ${futureDataSkipped} future BOM observations, kept ${results.length} past observations`);
-    }
+    // BOM observations are actual observations (no future data), so no need to filter
+    console.log(`[PARSE] Processed ${results.length} BOM observations (BOM data contains no future forecasts)`);
   }
 
   // Fallback to Open-Meteo data if BOM data is unavailable
