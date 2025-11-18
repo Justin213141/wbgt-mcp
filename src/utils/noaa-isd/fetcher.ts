@@ -20,10 +20,30 @@ export class ISDFetcher {
   /**
    * Fetch and decompress a single ISD file from S3
    * Uses Cloudflare Workers' native DecompressionStream
+   * **PERFORMANCE OPTIMIZATION**: Uses Cloudflare Cache API for S3 responses
    */
   async fetchISDFile(stationId: string, year: number): Promise<string> {
     const url = this.buildS3Url(stationId, year);
-    console.log(`[ISD-FETCH] Fetching ${url}`);
+    const cacheKey = new Request(url, { method: 'GET' });
+
+    // Try to get from cache first
+    let cache: Cache | null = null;
+    try {
+      cache = caches?.default;
+      if (cache) {
+        const cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          console.log(`[ISD-FETCH] Cache HIT for ${stationId}-${year}`);
+          return await cachedResponse.text();
+        }
+        console.log(`[ISD-FETCH] Cache MISS for ${stationId}-${year}`);
+      }
+    } catch (e) {
+      // Cache API not available (e.g., in development)
+      console.log(`[ISD-FETCH] Cache API not available`);
+    }
+
+    console.log(`[ISD-FETCH] Fetching from S3: ${url}`);
 
     try {
       const response = await fetch(url);
@@ -55,11 +75,44 @@ export class ISDFetcher {
       }
 
       console.log(`[ISD-FETCH] Successfully decompressed ${chunks} chunks, ${result.length} bytes`);
+
+      // Store in cache for future requests (1 day TTL)
+      if (cache) {
+        try {
+          const cacheResponse = new Response(result, {
+            headers: {
+              'Content-Type': 'text/plain',
+              'Cache-Control': 'public, max-age=86400' // 24 hours
+            }
+          });
+          await cache.put(cacheKey, cacheResponse);
+          console.log(`[ISD-FETCH] Cached response for ${stationId}-${year}`);
+        } catch (e) {
+          console.warn(`[ISD-FETCH] Failed to cache response:`, e);
+        }
+      }
+
       return result;
     } catch (error) {
       console.error(`[ISD-FETCH] Error fetching ${url}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Get list of years covered by a date range
+   * Helper method for determining which ISD files to fetch
+   */
+  getYearsFromDateRange(startDate: string, endDate: string): number[] {
+    const startYear = parseInt(startDate.split('-')[0]);
+    const endYear = parseInt(endDate.split('-')[0]);
+
+    const years: number[] = [];
+    for (let year = startYear; year <= endYear; year++) {
+      years.push(year);
+    }
+
+    return years;
   }
 
   /**
@@ -72,13 +125,12 @@ export class ISDFetcher {
     endDate: string
   ): Promise<string[]> {
     const stationId = getStationId(station);
-    const startYear = parseInt(startDate.split('-')[0]);
-    const endYear = parseInt(endDate.split('-')[0]);
+    const years = this.getYearsFromDateRange(startDate, endDate);
 
     const fileContents: string[] = [];
 
     // Fetch all years in the range
-    for (let year = startYear; year <= endYear; year++) {
+    for (const year of years) {
       try {
         const content = await this.fetchISDFile(stationId, year);
         fileContents.push(content);
