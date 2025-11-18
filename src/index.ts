@@ -218,8 +218,13 @@ async function fetchObservations(
   const bomResponse = responses[1] ?? null;
 
   if (srResponse.status !== 200) {
+    console.error(`[FETCH] Open-Meteo fetch failed with status ${srResponse.status}`);
   }
   if (bomResponse && bomResponse.status !== 200) {
+    console.error(`[FETCH] BOM fetch failed with status ${bomResponse.status} for URL: ${finalBomUrl}`);
+  }
+  if (!bomResponse) {
+    console.warn(`[FETCH] No BOM data requested (bomUrl was null)`);
   }
 
   return {
@@ -875,13 +880,79 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
   const bomObs = bomData?.observations?.data || [];
   const { omMap, cloudMap, uvMap } = buildOpenMeteoMaps(srData);
 
+  let results: any[] = [];
 
-  const results: any[] = bomObs
-    .map((obs: any, idx: number) => {
-      const timestamp = normalizeBOMTimestamp(obs.local_date_time);
-      return processBOMObservationKong(obs, timestamp, omMap, cloudMap, uvMap, idx);
-    })
-    .filter((result): result is any => result !== null);
+  // Try to process BOM observations first if available
+  if (bomObs.length > 0) {
+    console.log(`[PARSE] Processing ${bomObs.length} BOM observations`);
+    results = bomObs
+      .map((obs: any, idx: number) => {
+        const timestamp = normalizeBOMTimestamp(obs.local_date_time);
+        return processBOMObservationKong(obs, timestamp, omMap, cloudMap, uvMap, idx);
+      })
+      .filter((result): result is any => result !== null);
+  }
+
+  // Fallback to Open-Meteo data if BOM data is unavailable
+  if (results.length === 0 && srData?.hourly?.time) {
+    console.log(`[PARSE] No BOM data available, falling back to Open-Meteo data (${srData.hourly.time.length} observations)`);
+
+    const times = srData.hourly.time || [];
+    const temps = srData.hourly.temperature_2m || [];
+    const humidity = srData.hourly.relative_humidity_2m || [];
+    const dewpoints = srData.hourly.dew_point_2m || [];
+    const wetBulbs = srData.hourly.wet_bulb_temperature_2m || [];
+    const pressures = srData.hourly.surface_pressure || [];
+    const windSpeeds = srData.hourly.wind_speed_10m || [];
+    const srInstant = srData.hourly.shortwave_radiation_instant || [];
+    const srDirect = srData.hourly.direct_radiation_instant || [];
+    const srDiffuse = srData.hourly.diffuse_radiation_instant || [];
+    const apparentTemps = srData.hourly.apparent_temperature || [];
+    const cloudCovers = srData.hourly.cloud_cover || [];
+    const uvIndexes = srData.hourly.uv_index || [];
+
+    times.forEach((time: string, idx: number) => {
+      const ta = temps[idx];
+      const rh = humidity[idx];
+      const solarRadiation = srInstant[idx] || 0;
+      const isoTime = time.includes('T') ? time : new Date(time).toISOString();
+
+      const e = calculateVaporPressure(ta, rh);
+      const ewbgt = calculateEWBGT(ta, e);
+      const at = calculateAT(ta, rh, windSpeeds[idx] * 3.6, solarRadiation);
+
+      let wbgt = calculateWBGT(ta, rh, solarRadiation);
+      try {
+        const kongCalc = calculateKongWBGTPipeline(
+          ta, wetBulbs[idx], rh, pressures[idx], windSpeeds[idx],
+          solarRadiation, srDirect[idx] || 0, srDiffuse[idx] || 0,
+          SYDNEY_LAT, SYDNEY_LON, isoTime
+        );
+        wbgt = kongCalc.kong_wbgt;
+      } catch (error) {
+        console.error(`[DEBUG] Error calculating Kong WBGT for ${isoTime}:`, error);
+      }
+
+      // Convert ISO timestamp to DD/MM/YYYY, HH:MM:SS format for consistency with BOM data
+      const [datePart, timePart] = isoTime.split('T');
+      const [year, month, day] = datePart.split('-');
+      const formattedTime = timePart.split('.')[0]; // Remove milliseconds and Z
+
+      results.push({
+        timestamp: `${day}/${month}/${year}, ${formattedTime}`,
+        temperature: parseFloat(ta.toFixed(1)),
+        humidity: Math.round(rh),
+        dew_point: parseFloat(dewpoints[idx].toFixed(1)),
+        wind_speed_ms: parseFloat(windSpeeds[idx].toFixed(2)),
+        solar_radiation: parseFloat(solarRadiation.toFixed(1)),
+        cloud_cover: parseFloat((cloudCovers[idx] || 0).toFixed(1)),
+        uv_index: parseFloat((uvIndexes[idx] || 0).toFixed(1)),
+        wbgt: parseFloat(wbgt.toFixed(1)),
+        esi: parseFloat(ewbgt.toFixed(1)),
+        apparent_temp: parseFloat((apparentTemps[idx] || 0).toFixed(1))
+      });
+    });
+  }
 
   // Apply time range filter if specified
   if (startTime && endTime) {
