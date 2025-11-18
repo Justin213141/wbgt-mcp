@@ -192,8 +192,8 @@ async function fetchObservations(
   const lon = longitude ?? SYDNEY_LON;
 
   // Observations endpoint only returns past 72 hours - always fetch recent with Kong parameters
-  // Use forecast_days=0 to prevent returning future forecast data
-  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3&forecast_days=0`;
+  // Use forecast_days=1 to include current day (needed to match BOM observations)
+  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3&forecast_days=1`;
 
   // Use provided BOM URL or default station
   const defaultBomUrl = DEFAULT_BOM_STATION.jsonUrl;
