@@ -192,7 +192,8 @@ async function fetchObservations(
   const lon = longitude ?? SYDNEY_LON;
 
   // Observations endpoint only returns past 72 hours - always fetch recent with Kong parameters
-  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3`;
+  // Use forecast_days=0 to prevent returning future forecast data
+  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3&forecast_days=0`;
 
   // Use provided BOM URL or default station
   const defaultBomUrl = DEFAULT_BOM_STATION.jsonUrl;
@@ -911,11 +912,22 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
     const cloudCovers = srData.hourly.cloud_cover || [];
     const uvIndexes = srData.hourly.uv_index || [];
 
+    const now = new Date();
+    let futureDataSkipped = 0;
+
     times.forEach((time: string, idx: number) => {
+      const isoTime = time.includes('T') ? time : new Date(time).toISOString();
+      const timeDate = new Date(isoTime);
+
+      // IMPORTANT: Only include past observations, not future forecasts
+      if (timeDate > now) {
+        futureDataSkipped++;
+        return; // Skip future data
+      }
+
       const ta = temps[idx];
       const rh = humidity[idx];
       const solarRadiation = srInstant[idx] || 0;
-      const isoTime = time.includes('T') ? time : new Date(time).toISOString();
 
       const e = calculateVaporPressure(ta, rh);
       const ewbgt = calculateEWBGT(ta, e);
@@ -952,6 +964,10 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
         apparent_temp: parseFloat((apparentTemps[idx] || 0).toFixed(1))
       });
     });
+
+    if (futureDataSkipped > 0) {
+      console.log(`[PARSE] Filtered out ${futureDataSkipped} future forecast data points, kept ${results.length} past observations`);
+    }
   }
 
   // Apply time range filter if specified
