@@ -55,8 +55,13 @@ export interface ISDHourlyData {
  * - Parramatta North: 5.92 km
  * - Canterbury Racecourse: 8.91 km
  * - Sydney Observatory Hill: 12.21 km
+ * - Fort Denison: 13.76 km
+ * - Sydney Intl: 16.25 km
+ * - Holsworthy Aerodrome AWS: 20.30 km
+ * - Horsley Equestrian Centre: 20.44 km
+ * - North Head: 21.30 km
  *
- * Focus on 99% use case (Greater Sydney area)
+ * Focus on 99% use case (Greater Sydney area - within ~20km radius)
  * Station data verified from NOAA ISD station history
  */
 export const SYDNEY_ISD_STATIONS: ISDStation[] = [
@@ -71,7 +76,7 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     longitude: 151.067,
     elevation: 4,
     begin: "1996-02-01",
-    end: "2025-08-24"
+    end: "2099-12-31"
   },
   {
     usaf: "947640",
@@ -84,7 +89,7 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     longitude: 151.017,
     elevation: 55,
     begin: "1997-01-01",
-    end: "2025-08-23"
+    end: "2099-12-31"
   },
   {
     usaf: "947660",
@@ -97,7 +102,7 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     longitude: 151.117,
     elevation: 3,
     begin: "1996-02-01",
-    end: "2025-08-24"
+    end: "2099-12-31"
   },
   {
     usaf: "947680",
@@ -110,7 +115,72 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     longitude: 151.200,
     elevation: 40,
     begin: "1954-12-31",
-    end: "2025-08-24"
+    end: "2099-12-31"
+  },
+  {
+    usaf: "947690",
+    wban: "99999",
+    name: "FORT DENISON",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -33.850,
+    longitude: 151.217,
+    elevation: 2,
+    begin: "2021-02-07",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "947670",
+    wban: "99999",
+    name: "SYDNEY INTL",
+    country: "AS",
+    state: "",
+    icao: "YSSY",
+    latitude: -33.946,
+    longitude: 151.177,
+    elevation: 6,
+    begin: "1943-09-23",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "957610",
+    wban: "99999",
+    name: "HOLSWORTHY AERODROME AWS",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -33.983,
+    longitude: 150.950,
+    elevation: 69,
+    begin: "2020-07-21",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "947600",
+    wban: "99999",
+    name: "HORSLEY EQUESTRIAN CENTRE",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -33.850,
+    longitude: 150.850,
+    elevation: 100,
+    begin: "2001-07-01",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "957680",
+    wban: "99999",
+    name: "NORTH HEAD",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -33.817,
+    longitude: 151.300,
+    elevation: 90,
+    begin: "1990-02-01",
+    end: "2099-12-31"
   }
 ];
 
