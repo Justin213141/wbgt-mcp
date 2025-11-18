@@ -11,7 +11,7 @@ import {
   findNearestStationOrDefault,
   determineDataSource
 } from '../src/utils/station-finder';
-import { DEFAULT_BOM_STATION, SYDNEY_BOM_STATIONS } from '../src/data/bom-stations';
+import { DEFAULT_BOM_STATION, SYDNEY_BOM_STATIONS, ALL_BOM_STATIONS } from '../src/data/bom-stations';
 
 describe('Station Finder Utility', () => {
   describe('calculateHaversineDistance', () => {
@@ -170,6 +170,17 @@ describe('Station Finder Utility', () => {
       expect(result.station).not.toBeNull();
       expect(result.source).toContain('Newcastle');
     });
+
+    it('should return Ulladulla for Lake Conjola area', () => {
+      // Lake Conjola coordinates
+      const result = determineDataSource(-35.265, 150.474);
+
+      expect(result.station).not.toBeNull();
+      expect(result.source).toBe('Ulladulla AWS');
+      expect(result.distance).toBeDefined();
+      expect(result.distance!).toBeGreaterThan(10);
+      expect(result.distance!).toBeLessThan(12);
+    });
   });
 
   describe('Station Database Integrity', () => {
@@ -182,16 +193,17 @@ describe('Station Finder Utility', () => {
       }
     });
 
-    it('should have unique station codes', () => {
-      const codes = SYDNEY_BOM_STATIONS.map(s => s.code);
+    it('should have unique station codes across all stations', () => {
+      const codes = ALL_BOM_STATIONS.map(s => s.code);
       const uniqueCodes = new Set(codes);
 
       expect(uniqueCodes.size).toBe(codes.length);
+      expect(codes.length).toBe(32); // 31 Sydney + 1 South Coast
     });
 
     it('should have valid JSON URLs for all stations', () => {
-      for (const station of SYDNEY_BOM_STATIONS) {
-        expect(station.jsonUrl).toMatch(/^http:\/\/www\.bom\.gov\.au\/fwo\/IDN60901\/IDN60901\.\d+\.json$/);
+      for (const station of ALL_BOM_STATIONS) {
+        expect(station.jsonUrl).toMatch(/^http:\/\/www\.bom\.gov\.au\/fwo\/IDN60[89]01\/IDN60[89]01\.\d+\.json$/);
       }
     });
 

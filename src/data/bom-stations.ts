@@ -274,6 +274,21 @@ export const SYDNEY_BOM_STATIONS: BOMStation[] = [
 ];
 
 /**
+ * South Coast NSW weather stations
+ * Includes Illawarra and South Coast regions
+ */
+export const SOUTH_COAST_BOM_STATIONS: BOMStation[] = [
+  {
+    name: "Ulladulla AWS",
+    code: "94938",
+    productId: "IDN60801",
+    latitude: -35.36,
+    longitude: 150.48,
+    jsonUrl: "http://www.bom.gov.au/fwo/IDN60801/IDN60801.94938.json"
+  }
+];
+
+/**
  * Default BOM station (Sydney Olympic Park)
  * Matches the current hardcoded station in the codebase
  */
@@ -282,8 +297,9 @@ export const DEFAULT_BOM_STATION: BOMStation = SYDNEY_BOM_STATIONS.find(
 )!;
 
 /**
- * All BOM stations (currently only Sydney, but can be extended)
+ * All BOM stations (Sydney + South Coast NSW)
  */
 export const ALL_BOM_STATIONS: BOMStation[] = [
-  ...SYDNEY_BOM_STATIONS
+  ...SYDNEY_BOM_STATIONS,
+  ...SOUTH_COAST_BOM_STATIONS
 ];
