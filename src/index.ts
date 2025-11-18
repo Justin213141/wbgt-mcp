@@ -228,10 +228,18 @@ async function fetchObservations(
     console.warn(`[FETCH] No BOM data requested (bomUrl was null)`);
   }
 
+  const bomData = bomResponse && bomResponse.status === 200 ? await bomResponse.json() as BOMData : undefined;
+
+  if (bomData?.observations?.data) {
+    console.log(`[FETCH] ✓ Successfully fetched ${bomData.observations.data.length} BOM observations from ${finalBomUrl}`);
+  } else if (bomResponse) {
+    console.warn(`[FETCH] ✗ BOM response received but no observation data found`);
+  }
+
   return {
     type: 'recent',
     srData: srResponse.status === 200 ? await srResponse.json() as SRData : undefined,
-    bomData: bomResponse && bomResponse.status === 200 ? await bomResponse.json() as BOMData : undefined
+    bomData
   };
 }
 
