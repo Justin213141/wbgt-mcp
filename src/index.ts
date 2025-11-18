@@ -1260,6 +1260,14 @@ export class WBGTServerMCP extends McpAgent {
           if (latitude !== undefined && longitude !== undefined) {
             dataSource = determineDataSource(latitude, longitude);
             bomUrl = dataSource.station?.jsonUrl ?? null;
+          } else {
+            // No coordinates specified - use default Sydney Olympic Park station
+            bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+            dataSource = {
+              station: DEFAULT_BOM_STATION,
+              source: DEFAULT_BOM_STATION.name,
+              distance: undefined
+            };
           }
 
           const data = await fetchObservations(
@@ -1465,6 +1473,14 @@ async function handleGetObservations(url: URL, corsHeaders: Record<string, strin
   if (latitude !== undefined && longitude !== undefined) {
     dataSource = determineDataSource(latitude, longitude);
     bomUrl = dataSource.station?.jsonUrl ?? null;
+  } else {
+    // No coordinates specified - use default Sydney Olympic Park station
+    bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+    dataSource = {
+      station: DEFAULT_BOM_STATION,
+      source: DEFAULT_BOM_STATION.name,
+      distance: undefined
+    };
   }
 
   const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
