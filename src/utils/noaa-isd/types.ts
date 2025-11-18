@@ -51,18 +51,26 @@ export interface ISDHourlyData {
  * Sydney Olympic Park AWS coordinates: -33.83, 151.07
  *
  * Distances from Sydney Olympic Park AWS:
- * - Sydney Olympic Park AWS: 0.43 km (SAME STATION!)
- * - Parramatta North: 5.92 km
- * - Canterbury Racecourse: 8.91 km
- * - Sydney Observatory Hill: 12.21 km
- * - Fort Denison: 13.76 km
- * - Sydney Intl: 16.25 km
- * - Holsworthy Aerodrome AWS: 20.30 km
- * - Horsley Equestrian Centre: 20.44 km
- * - North Head: 21.30 km
+ * 1. Sydney Olympic Park AWS: 0.43 km (SAME STATION!)
+ * 2. Parramatta North: 5.92 km
+ * 3. Canterbury Racecourse: 8.91 km
+ * 4. Kurnell AWS: 9.81 km
+ * 5. Sydney Bankstown: 11.53 km
+ * 6. Sydney Observatory Hill: 12.21 km
+ * 7. Fort Denison: 13.76 km
+ * 8. Little Bay (The Coast Golf Club): 13.91 km
+ * 9. Sydney Intl: 16.25 km
+ * 10. Holsworthy Aerodrome AWS: 20.30 km
+ * 11. Horsley Equestrian Centre: 20.44 km
+ * 12. North Head: 21.30 km
  *
  * Focus on 99% use case (Greater Sydney area - within ~20km radius)
  * Station data verified from NOAA ISD station history
+ *
+ * For stations outside Sydney area, lookup available at:
+ * - NOAA ISD Station History: https://www.ncei.noaa.gov/pub/data/noaa/isd-history.txt
+ * - Alternative CSV format: https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv
+ * - AWS Open Data Registry: https://registry.opendata.aws/noaa-isd/
  */
 export const SYDNEY_ISD_STATIONS: ISDStation[] = [
   {
@@ -105,6 +113,32 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     end: "2099-12-31"
   },
   {
+    usaf: "957560",
+    wban: "99999",
+    name: "KURNELL AWS",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -34.000,
+    longitude: 151.200,
+    elevation: 4,
+    begin: "2010-10-12",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "947650",
+    wban: "99999",
+    name: "SYDNEY BANKSTOWN",
+    country: "AS",
+    state: "",
+    icao: "YSBK",
+    latitude: -33.924,
+    longitude: 150.988,
+    elevation: 9,
+    begin: "1968-07-01",
+    end: "2099-12-31"
+  },
+  {
     usaf: "947680",
     wban: "99999",
     name: "SYDNEY OBSERVATORY HILL",
@@ -128,6 +162,19 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
     longitude: 151.217,
     elevation: 2,
     begin: "2021-02-07",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "947800",
+    wban: "99999",
+    name: "LITTLE BAY (THE COAST GOLF CLUB)",
+    country: "AS",
+    state: "",
+    icao: "",
+    latitude: -33.983,
+    longitude: 151.250,
+    elevation: 0,
+    begin: "1900-01-01",
     end: "2099-12-31"
   },
   {
