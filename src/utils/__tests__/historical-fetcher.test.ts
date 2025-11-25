@@ -252,6 +252,19 @@ describe('HistoricalFetcher', () => {
         )
       ).rejects.toThrow('Invalid date range: end_date cannot be today');
     });
+
+    it('should handle coordinates just south of Sydney region boundary', async () => {
+      // Coordinates at -35.73 (just outside old -35 boundary, inside new -40 boundary)
+      const result = await fetcher.fetchKongWBGTByTimezone(
+        '2023-01-26',
+        '2023-01-26',
+        -35.734748840332,
+        150.191177368164
+      );
+
+      expect(result).toBeDefined();
+      expect(Array.isArray(result)).toBe(true);
+    });
   });
 
   describe('class instantiation', () => {

@@ -80,6 +80,56 @@ export function calculateKongNaturalWetBulb(
 }
 
 /**
+ * Calculate psychrometric wet bulb temperature from dry bulb temp, relative humidity, and pressure
+ * Using Kong's zero-iteration psychrometric method
+ * This is the wet bulb temperature in a ventilated environment (no radiation)
+ *
+ * @param T Dry bulb temperature (°C)
+ * @param RH Relative humidity (%)
+ * @param P Pressure (hPa)
+ * @returns Psychrometric wet bulb temperature (°C)
+ */
+export function calculatePsychrometricWetBulb(
+  T: number,      // Dry bulb temperature (°C)
+  RH: number,     // Relative humidity (%)
+  P: number       // Pressure (hPa)
+): number {
+  // Calculate actual vapor pressure from relative humidity
+  const e_sat_T = calculateBuckSaturationVaporPressure(T);
+  const e_a = (RH / 100) * e_sat_T;
+
+  // Psychrometric constant (γ) in Pa/K
+  const P_Pa = P * 100;  // Convert hPa to Pa
+  const psychrometric_constant = 0.000666 * P_Pa;
+
+  // Solve for Tw using the psychrometric equation:
+  // e_a = e_sat(Tw) - γ * (T - Tw)
+  // We need to find Tw where f(Tw) = e_sat(Tw) - γ * (T - Tw) - e_a = 0
+
+  // Use simple iterative approach - start with reasonable bounds
+  // Wet bulb must be between dew point (approx) and dry bulb
+  let Tw_low = Math.min(T - 15, T);  // Lower bound (can't be more than 15°C below T)
+  let Tw_high = T;                    // Upper bound (can't exceed dry bulb)
+
+  // Bisection method for 20 iterations (more than enough for convergence)
+  for (let i = 0; i < 20; i++) {
+    const Tw_mid = (Tw_low + Tw_high) / 2;
+    const e_sat_mid = calculateBuckSaturationVaporPressure(Tw_mid);
+    const f_mid = e_sat_mid - psychrometric_constant * (T - Tw_mid) - e_a;
+
+    if (f_mid > 0) {
+      // Wet bulb too low, need higher Tw to increase e_sat(Tw)
+      Tw_low = Tw_mid;
+    } else {
+      // Wet bulb too high, need lower Tw
+      Tw_high = Tw_mid;
+    }
+  }
+
+  return (Tw_low + Tw_high) / 2;
+}
+
+/**
  * Calculate Kong WBGT using zero-iteration method
  */
 export function calculateKongWBGT(Ta: number, T_g: number, T_nw: number): number {

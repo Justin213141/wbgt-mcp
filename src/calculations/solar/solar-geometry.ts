@@ -3,6 +3,10 @@
  * Handles solar zenith angle calculations for different timezones
  */
 
+// Cache for Sydney solar angles (99% use case)
+// Key: "lat-lon-timestamp", Value: pre-calculated angle
+const sydneyAngleCache = new Map<string, number>();
+
 /**
  * Unified solar zenith angle calculation for any timezone
  * Delegates to appropriate timezone-specific function based on UTC offset
@@ -14,6 +18,18 @@ export function calculateSolarZenithAngleByTimezone(
   utcOffset: number,
   hasDST: boolean
 ): number {
+  // Fast path for Sydney area (approximate check)
+  if (Math.abs(lat - (-33.8)) < 2.0 && Math.abs(lon - 151.0) < 2.0 && utcOffset === 10 && hasDST) {
+    const cacheKey = `${lat.toFixed(3)}-${lon.toFixed(3)}-${timestamp}`;
+    const cached = sydneyAngleCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const angle = calculateSolarZenithAngle(lat, lon, timestamp);
+    sydneyAngleCache.set(cacheKey, angle);
+    return angle;
+  }
+
   if (utcOffset === 10 && hasDST) {
     return calculateSolarZenithAngle(lat, lon, timestamp);
   }

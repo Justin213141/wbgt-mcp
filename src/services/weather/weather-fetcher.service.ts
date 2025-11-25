@@ -21,7 +21,6 @@ export interface EnhancedWeatherData extends WeatherData {
     temperature_2m: number[];
     relative_humidity_2m: number[];
     dew_point_2m: number[];
-    wet_bulb_temperature_2m: number[];
     surface_pressure: number[];
     wind_speed_10m: number[];
     shortwave_radiation_instant: number[];
@@ -93,7 +92,7 @@ export class WeatherFetcherService {
     url.searchParams.set('longitude', longitude.toString());
     url.searchParams.set('start_date', startDate);
     url.searchParams.set('end_date', endDate);
-    url.searchParams.set('hourly', 'temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,cloud_cover');
+    url.searchParams.set('hourly', 'temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,cloud_cover');
     url.searchParams.set('timezone', timezone);
 
     console.log(`[WeatherFetcher] Fetching standard weather data: ${url.toString()}`);

@@ -41,6 +41,23 @@ export function calculateRadiationComponents(
   const LRdown = emissivity_atm * STEFAN_BOLTZMANN * Math.pow(Ta_K, 4);
   const LRup = STEFAN_BOLTZMANN * Math.pow(Ta_K, 4);
 
+  // Handle edge case: when sun is at/below horizon (zenith >= 85°), use diffuse-only approximation
+  // This prevents mathematical singularities from tan(90°) → ∞ and division by near-zero cos(90°)
+  if (theta_deg >= 85) {
+    // Sun is at/below horizon - use only diffuse and reflected radiation
+    const SRg = 0.5 * (1 - GLOBE_ALBEDO) * (SRdown + SRup);
+    const LRg = 0.5 * GLOBE_EMISSIVITY * (LRdown + LRup);
+
+    const SRw = (1 - WICK_ALBEDO) * (
+      (1 + 0.007 / (4 * WICK_LENGTH)) * SRdown +
+      SRup
+    );
+    const LRw = 0.5 * WICK_EMISSIVITY * (LRdown + LRup);
+
+    return { SRg, LRg, SRw, LRw };
+  }
+
+  // Normal case: sun is above horizon
   // Shortwave on globe (0.5 sphere, receiving from sky and ground)
   const cosTheta = Math.cos(theta_rad);
   const denom = Math.max(0.1, cosTheta);
@@ -55,7 +72,7 @@ export function calculateRadiationComponents(
   const LRg = 0.5 * GLOBE_EMISSIVITY * (LRdown + LRup);
 
   // Shortwave on wick (0.5 cylinder with specified albedo and geometry)
-  // From Kong paper equation
+  // From Kong paper equation (tan(theta) is finite when theta < 85°)
   const SRw = (1 - WICK_ALBEDO) * [
     (1 + 0.007 / (4 * WICK_LENGTH)) * (1 - fdir) * SRdown,
     (Math.tan(theta_rad) / Math.PI + 0.007 / (4 * WICK_LENGTH)) * fdir * SRdown,

@@ -67,21 +67,53 @@ export class ISDParser {
       return obs;
     }
 
-    // Wind data (positions 61-69)
-    // Position 61-63: Wind direction (degrees)
-    // Position 64-67: Wind speed (m/s * 10)
-    // Position 68: Wind speed quality
-    const windDir = line.substring(60, 63);
-    const windSpeed = line.substring(63, 67);
-    const windQuality = line.substring(67, 68);
+    // Wind data - modern ISD format uses variable-length control section
+    // Two format variants exist:
+    // Format 1 (legacy): V02DDDQQN0DDDQSSSS - 9 digits after N (0+dir+Q+speed)
+    // Format 2 (modern): V02DDDQQNSSSSQ - 5 digits after N (speed+Q), then non-digit
+    //
+    // Key difference: Format 1 has exactly 9 consecutive digits after N,
+    // Format 2 has exactly 5 consecutive digits after N (then more data follows)
+    //
+    // Try Format 1 first - must have 9 consecutive digits after N
+    let windMatch = line.match(/V0[23]\d{5}N(\d{9})(?=\D|$)/);
 
-    if (windSpeed !== '9999' && windSpeed !== '+999') {
-      obs.wind_speed = parseInt(windSpeed) / 10;
-      obs.quality.wind = windQuality;
-    }
+    if (windMatch) {
+      // Format 1: extract from the 9 digits after N
+      const nineDigits = windMatch[1];
+      const windDir = nineDigits.substring(1, 4);  // Skip first '0', take next 3
+      const windSpeed = nineDigits.substring(5, 9); // Skip to position 5, take 4 digits
 
-    if (windDir !== '999') {
-      obs.wind_direction = parseInt(windDir);
+      // Parse wind direction (999 = missing)
+      if (windDir !== '999') {
+        obs.wind_direction = parseInt(windDir);
+      }
+
+      // Parse wind speed (9999 = missing)
+      if (windSpeed !== '9999') {
+        obs.wind_speed = parseInt(windSpeed) / 10;
+        obs.quality.wind = '1'; // Default quality for legacy format
+      }
+    } else {
+      // Format 1 didn't match, try Format 2 - exactly 5 digits after N
+      windMatch = line.match(/V0[23](\d{3})(\d{2})N(\d{4})(\d)/);
+
+      if (windMatch) {
+        const windDir = windMatch[1];
+        const windSpeed = windMatch[3];
+        const windQuality = windMatch[4];
+
+        // Parse wind direction (999 = missing)
+        if (windDir !== '999') {
+          obs.wind_direction = parseInt(windDir);
+        }
+
+        // Parse wind speed (9999 = missing)
+        if (windSpeed !== '9999') {
+          obs.wind_speed = parseInt(windSpeed) / 10;
+          obs.quality.wind = windQuality;
+        }
+      }
     }
 
     // Temperature data (positions 87-92)
@@ -90,7 +122,8 @@ export class ISDParser {
     const tempStr = line.substring(87, 92);
     const tempQuality = line.substring(92, 93);
 
-    if (tempStr !== '+9999') {
+    // Missing value can be +9999 or 99999 (all 9s)
+    if (tempStr !== '+9999' && !/^9+$/.test(tempStr)) {
       obs.temperature = parseInt(tempStr) / 10;
       obs.quality.temperature = tempQuality;
     }
@@ -101,7 +134,8 @@ export class ISDParser {
     const dewStr = line.substring(93, 98);
     const dewQuality = line.substring(98, 99);
 
-    if (dewStr !== '+9999') {
+    // Missing value can be +9999 or 99999 (all 9s)
+    if (dewStr !== '+9999' && !/^9+$/.test(dewStr)) {
       obs.dew_point = parseInt(dewStr) / 10;
       obs.quality.dew_point = dewQuality;
     }
@@ -112,7 +146,8 @@ export class ISDParser {
     const slpStr = line.substring(99, 104);
     const slpQuality = line.substring(104, 105);
 
-    if (slpStr !== '99999') {
+    // Missing value is 99999 (all 9s)
+    if (!/^9+$/.test(slpStr)) {
       obs.sea_level_pressure = parseInt(slpStr) / 10;
       obs.quality.pressure = slpQuality;
     }
@@ -230,6 +265,7 @@ export class ISDParser {
 
     const obs: ISDObservation = {
       timestamp: control.timestamp,
+      station_id: control.stationId,
       ...mandatory,
       ...additional,
       quality: mandatory.quality || {
@@ -318,7 +354,7 @@ export class ISDParser {
       dataQuality = 'poor';
     }
 
-    const stationId = station ? getStationId(station) : (filtered.length > 0 ? filtered[0].timestamp.substring(0, 12) : 'unknown');
+    const stationId = station ? getStationId(station) : (filtered.length > 0 ? filtered[0].station_id : 'unknown');
     const stationName = station ? station.name : 'unknown';
 
     console.log(`[ISD-PARSE] Parsed ${filtered.length} observations, ${goodQuality.length} good quality (${(qualityRatio * 100).toFixed(1)}%)`);

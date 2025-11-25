@@ -21,6 +21,7 @@ import {
   calculateKongWBGTPipeline,
   calculateKongWBGTPipelineJST,
   calculateKongWBGTPipelineByTimezone,
+  calculatePsychrometricWetBulb,
   calculateWBGT,
   calculateEWBGT,
   calculateAT,
@@ -30,6 +31,10 @@ import {
 import { determineDataSource } from './utils/station-finder';
 import { DEFAULT_BOM_STATION } from './data/bom-stations';
 
+// Import Visual Crossing fetcher for 3-90 day observational data
+import { VisualCrossingFetcher } from './utils/visual-crossing-fetcher';
+import type { VisualCrossingObservation, HourlyWeatherArrays } from './utils/visual-crossing-fetcher';
+
 // --- Type Definitions ---
 interface SRData {
   hourly?: {
@@ -37,7 +42,6 @@ interface SRData {
     temperature_2m?: number[];
     relative_humidity_2m?: number[];
     dew_point_2m?: number[];
-    wet_bulb_temperature_2m?: number[];
     surface_pressure?: number[];
     wind_speed_10m?: number[];
     shortwave_radiation?: number[];
@@ -63,7 +67,6 @@ interface WeatherData {
     temperature_2m?: number[];
     relative_humidity_2m?: number[];
     dew_point_2m?: number[];
-    wet_bulb_temperature_2m?: number[];
     surface_pressure?: number[];
     wind_speed_10m?: number[];
     shortwave_radiation?: number[];
@@ -193,7 +196,7 @@ async function fetchObservations(
 
   // Observations endpoint only returns past 72 hours - always fetch recent with Kong parameters
   // Use forecast_days=1 to include current day (needed to match BOM observations)
-  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3&forecast_days=1`;
+  const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&past_days=3&forecast_days=1`;
 
   // Use provided BOM URL or default station
   const defaultBomUrl = DEFAULT_BOM_STATION.jsonUrl;
@@ -245,7 +248,7 @@ async function fetchObservations(
 
 async function fetchForecast(): Promise<{ srData: SRData | null; aqData: AQData | null; bomData: BOMData | null; responseStatuses: { sr: number; aq: number; bom: number } }> {
   return await (async () => {
-      const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&forecast_days=3`;
+      const srUrl = `https://api.open-meteo.com/v1/forecast?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,cloud_cover,shortwave_radiation,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,uv_index&timezone=Australia%2FSydney&forecast_days=3`;
       const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${SYDNEY_LAT}&longitude=${SYDNEY_LON}&hourly=us_aqi,pm10,pm2_5&timezone=Australia%2FSydney&forecast_days=3`;
       const bomUrl = `https://api.weather.bom.gov.au/v1/locations/${BOM_LOCATION_ID}/forecasts/hourly`;
 
@@ -329,6 +332,10 @@ function getMaxInRange(data: any[], startTime: string, endTime: string) {
     return null;
   }
 
+  // Get unique sources from the range (most records should have same source)
+  const sources = [...new Set(inRange.map((d: any) => d.source).filter(Boolean))];
+  const sourceSummary = sources.length > 0 ? sources.join(' + ') : 'unknown';
+
   return {
     timestamp: `${startTime} to ${endTime}`,
     temperature: Math.max(...inRange.map((d: any) => d.temperature)),
@@ -340,7 +347,8 @@ function getMaxInRange(data: any[], startTime: string, endTime: string) {
     uv_index: Math.max(...inRange.map((d: any) => d.uv_index)),
     wbgt: Math.max(...inRange.map((d: any) => d.wbgt)),
     esi: Math.max(...inRange.map((d: any) => d.esi)),
-    apparent_temp: Math.max(...inRange.map((d: any) => d.apparent_temp))
+    apparent_temp: Math.max(...inRange.map((d: any) => d.apparent_temp)),
+    source: sourceSummary
   };
 }
 
@@ -567,7 +575,6 @@ function parseRecentObservations(data: ObservationsResponse): any[] {
   const omTemps = data.srData?.hourly?.temperature_2m || [];
   const omHumidity = data.srData?.hourly?.relative_humidity_2m || [];
   const omDewpoints = data.srData?.hourly?.dew_point_2m || [];
-  const omWetBulbs = data.srData?.hourly?.wet_bulb_temperature_2m || [];
   const omPressures = data.srData?.hourly?.surface_pressure || [];
   const omWindSpeeds = data.srData?.hourly?.wind_speed_10m || [];
   const omSRInstant = data.srData?.hourly?.shortwave_radiation_instant || [];
@@ -576,6 +583,11 @@ function parseRecentObservations(data: ObservationsResponse): any[] {
   const omApparentTemps = data.srData?.hourly?.apparent_temperature || [];
   const srClouds = data.srData?.hourly?.cloud_cover || [];
   const srUV = data.srData?.hourly?.uv_index || [];
+
+  // Calculate psychrometric wet bulb from temperature, humidity, and pressure
+  const omWetBulbs = omTemps.map((temp, i) =>
+    calculatePsychrometricWetBulb(temp, omHumidity[i], omPressures[i])
+  );
 
   // Build maps: key = "2025-10-19T14" for Open-Meteo data
   const omMap: Record<string, { idx: number; omData: any }> = {};
@@ -668,7 +680,6 @@ function parseHistoricalObservations(weatherData: WeatherData): any[] {
   const temps = weatherData?.hourly?.temperature_2m || [];
   const humidity = weatherData?.hourly?.relative_humidity_2m || [];
   const dewpoints = weatherData?.hourly?.dew_point_2m || [];
-  const wetBulbs = weatherData?.hourly?.wet_bulb_temperature_2m || [];
   const pressures = weatherData?.hourly?.surface_pressure || [];
   const windSpeeds = weatherData?.hourly?.wind_speed_10m || [];
   const srInstant = weatherData?.hourly?.shortwave_radiation_instant || [];
@@ -676,6 +687,11 @@ function parseHistoricalObservations(weatherData: WeatherData): any[] {
   const srDiffuse = weatherData?.hourly?.diffuse_radiation_instant || [];
   const apparentTemps = weatherData?.hourly?.apparent_temperature || [];
   const cloudCovers = weatherData?.hourly?.cloud_cover || [];
+
+  // Calculate psychrometric wet bulb from temperature, humidity, and pressure
+  const wetBulbs = temps.map((temp, i) =>
+    calculatePsychrometricWetBulb(temp, humidity[i], pressures[i])
+  );
 
   times.forEach((time: string, idx: number) => {
     const ta = temps[idx];
@@ -710,6 +726,75 @@ function parseHistoricalObservations(weatherData: WeatherData): any[] {
       wbgt: parseFloat(wbgt.toFixed(1)),
       esi: parseFloat(ewbgt.toFixed(1)),
       apparent_temp: parseFloat((apparentTemps[idx] || 0).toFixed(1))
+    });
+  });
+
+  return results;
+}
+
+// Helper function to parse OpenMeteo historical observations with custom lat/lon for Kong calculations
+async function parseHistoricalObservationsWithSolar(
+  weatherData: WeatherData,
+  latitude: number,
+  longitude: number
+): Promise<any[]> {
+  const results: any[] = [];
+  const times = weatherData?.hourly?.time || [];
+  const temps = weatherData?.hourly?.temperature_2m || [];
+  const humidity = weatherData?.hourly?.relative_humidity_2m || [];
+  const dewpoints = weatherData?.hourly?.dew_point_2m || [];
+  const pressures = weatherData?.hourly?.surface_pressure || [];
+  const windSpeeds = weatherData?.hourly?.wind_speed_10m || [];
+  const srInstant = weatherData?.hourly?.shortwave_radiation_instant || [];
+  const srDirect = weatherData?.hourly?.direct_radiation_instant || [];
+  const srDiffuse = weatherData?.hourly?.diffuse_radiation_instant || [];
+  const apparentTemps = weatherData?.hourly?.apparent_temperature || [];
+  const cloudCovers = weatherData?.hourly?.cloud_cover || [];
+  const uvIndexes = weatherData?.hourly?.uv_index || [];
+
+  // Calculate psychrometric wet bulb from temperature, humidity, and pressure
+  const wetBulbs = temps.map((temp, i) =>
+    calculatePsychrometricWetBulb(temp, humidity[i], pressures[i])
+  );
+
+  times.forEach((time: string, idx: number) => {
+    const ta = temps[idx];
+    const rh = humidity[idx];
+    const solarRadiation = srInstant[idx] || 0;
+    const isoTime = time.includes('T') ? time : new Date(time).toISOString();
+
+    const e = calculateVaporPressure(ta, rh);
+    const ewbgt = calculateEWBGT(ta, e);
+    const at = calculateAT(ta, rh, windSpeeds[idx] * 3.6, solarRadiation);
+
+    let wbgt = calculateWBGT(ta, rh, solarRadiation);
+    try {
+      const kongCalc = calculateKongWBGTPipelineByTimezone(
+        ta, wetBulbs[idx], rh, pressures[idx], windSpeeds[idx],
+        solarRadiation, srDirect[idx] || 0, srDiffuse[idx] || 0,
+        latitude, longitude, isoTime,
+        10,   // Base UTC offset
+        true  // has DST
+      );
+      wbgt = kongCalc.kong_wbgt;
+    } catch (error) {
+      console.error(`[DEBUG] Tier 2 - Error calculating Kong WBGT for ${isoTime}:`, error);
+    }
+
+    results.push({
+      timestamp: isoTime,
+      temperature: parseFloat(ta.toFixed(1)),
+      humidity: Math.round(rh),
+      dew_point: parseFloat(dewpoints[idx].toFixed(1)),
+      wind_speed_ms: parseFloat(windSpeeds[idx].toFixed(1)),
+      solar_radiation: parseFloat(solarRadiation.toFixed(1)),
+      cloud_cover: parseFloat((cloudCovers[idx] || 0).toFixed(1)),
+      uv_index: parseFloat((uvIndexes[idx] || 0).toFixed(1)),
+      wbgt: parseFloat(wbgt.toFixed(1)),
+      esi: parseFloat(ewbgt.toFixed(1)),
+      apparent_temp: parseFloat((apparentTemps[idx] || 0).toFixed(1)),
+      data_source: 'OpenMeteo + OpenMeteo Solar',
+      tier: 'tier_2'
     });
   });
 
@@ -798,7 +883,6 @@ function buildOpenMeteoMaps(srData: SRData | null): { omMap: Record<string, any>
   const omTemps = srData?.hourly?.temperature_2m || [];
   const omHumidity = srData?.hourly?.relative_humidity_2m || [];
   const omDewpoints = srData?.hourly?.dew_point_2m || [];
-  const omWetBulbs = srData?.hourly?.wet_bulb_temperature_2m || [];
   const omPressures = srData?.hourly?.surface_pressure || [];
   const omWindSpeeds = srData?.hourly?.wind_speed_10m || [];
   const omSRInstant = srData?.hourly?.shortwave_radiation_instant || [];
@@ -807,6 +891,11 @@ function buildOpenMeteoMaps(srData: SRData | null): { omMap: Record<string, any>
   const omApparentTemps = srData?.hourly?.apparent_temperature || [];
   const srClouds = srData?.hourly?.cloud_cover || [];
   const srUV = srData?.hourly?.uv_index || [];
+
+  // Calculate psychrometric wet bulb from temperature, humidity, and pressure
+  const omWetBulbs = omTemps.map((temp, i) =>
+    calculatePsychrometricWetBulb(temp, omHumidity[i], omPressures[i])
+  );
 
   srTimes.forEach((time: string, idx: number) => {
     const hourKey = time.substring(0, 13);
@@ -850,25 +939,32 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
   }
 
   const e = calculateVaporPressure(ta, rh);
-  const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
+  const esi = calculateESI(ta, rh, solar_radiation);
   const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
 
-  let wbgt_kong: number | null = null;
-  if (omData) {
-    try {
-      const kongCalc = calculateKongWBGTPipeline(
-        ta, omData.wet_bulb || 0, rh, omData.pressure || 0, omData.wind_speed || 0,
-        solar_radiation, omData.sr_direct || 0, omData.sr_diffuse || 0,
-        SYDNEY_LAT, SYDNEY_LON, timestamp
-      );
-      wbgt_kong = kongCalc.kong_wbgt;
-    } catch (error) {
-      console.error(`[PARSE OBS] Error calculating Kong WBGT for ${timestamp}:`, error);
-    }
+  // Always calculate Kong WBGT
+  let wbgt_kong: number;
+  try {
+    const kongCalc = calculateKongWBGTPipeline(
+      ta, omData?.wet_bulb || 0, rh, omData?.pressure || 1013.25, omData?.wind_speed || (ws_kmh / 3.6),
+      solar_radiation, omData?.sr_direct || 0, omData?.sr_diffuse || 0,
+      SYDNEY_LAT, SYDNEY_LON, timestamp
+    );
+    wbgt_kong = kongCalc.kong_wbgt;
+  } catch (error) {
+    console.error(`[PARSE OBS] Error calculating Kong WBGT for ${timestamp}:`, error);
+    // If Kong calculation fails, use simple calculation as emergency fallback
+    wbgt_kong = calculateWBGT(ta, rh, solar_radiation);
   }
 
   const [datePart, timePart] = timestamp.split('T');
   const [year, month, day] = datePart.split('-');
+
+  // Build source field in pattern: "weather_source: station + solar_source"
+  const weatherSource = 'BOM';
+  const stationName = obs.name || 'Unknown';
+  const solarSource = solar_radiation > 0 ? (omData ? 'satellite' : 'estimated') : 'night';
+  const source = `${weatherSource}: ${stationName} + ${solarSource}`;
 
   return {
     timestamp: `${day}/${month}/${year}, ${timePart}`,
@@ -879,9 +975,10 @@ function processBOMObservationKong(obs: any, timestamp: string, omMap: Record<st
     solar_radiation: parseFloat((solar_radiation || omData?.sr_instant || 0).toFixed(1)),
     cloud_cover: parseFloat((cloudMap[hourKey] || 0).toFixed(1)),
     uv_index: parseFloat((uvMap[hourKey] || 0).toFixed(1)),
-    wbgt: wbgt_kong !== null ? parseFloat(wbgt_kong.toFixed(1)) : parseFloat(wbgt_esi.toFixed(1)),
-    esi: parseFloat(wbgt_esi.toFixed(1)),
-    apparent_temp: parseFloat(at.toFixed(1))
+    wbgt: parseFloat(wbgt_kong.toFixed(1)),
+    esi: parseFloat(esi.toFixed(1)),
+    apparent_temp: parseFloat(at.toFixed(1)),
+    source
   };
 }
 
@@ -914,7 +1011,6 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
     const temps = srData.hourly.temperature_2m || [];
     const humidity = srData.hourly.relative_humidity_2m || [];
     const dewpoints = srData.hourly.dew_point_2m || [];
-    const wetBulbs = srData.hourly.wet_bulb_temperature_2m || [];
     const pressures = srData.hourly.surface_pressure || [];
     const windSpeeds = srData.hourly.wind_speed_10m || [];
     const srInstant = srData.hourly.shortwave_radiation_instant || [];
@@ -923,6 +1019,11 @@ function parseObservationsKong(srData: SRData | null, bomData: BOMData | null, s
     const apparentTemps = srData.hourly.apparent_temperature || [];
     const cloudCovers = srData.hourly.cloud_cover || [];
     const uvIndexes = srData.hourly.uv_index || [];
+
+    // Calculate psychrometric wet bulb from temperature, humidity, and pressure
+    const wetBulbs = temps.map((temp, i) =>
+      calculatePsychrometricWetBulb(temp, humidity[i], pressures[i])
+    );
 
     const now = new Date();
     let futureDataSkipped = 0;
@@ -1110,25 +1211,23 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     solar_radiation = estimateSolarRadiation(hour);
   }
 
-  const wbgt_esi = calculateWBGT(ta, rh, solar_radiation);
+  const esi = calculateESI(ta, rh, solar_radiation);
   const at = calculateAT(ta, rh, ws_kmh, solar_radiation);
 
-  let wbgt_kong: number | null = null;
-  let kongCalculated = false;
-
-  if (omEntry?.omData) {
-    try {
-      const sydneyTimestamp = hourKey + ':00';
-      const kongCalc = calculateKongWBGTPipeline(
-        ta, omEntry.omData.wet_bulb || 0, rh, omEntry.omData.pressure || 0, omEntry.omData.wind_speed || 0,
-        solar_radiation, omEntry.omData.sr_direct || 0, omEntry.omData.sr_diffuse || 0,
-        SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
-      );
-      wbgt_kong = kongCalc.kong_wbgt;
-      kongCalculated = true;
-    } catch (error) {
-      console.error(`[PARSE] Error calculating Kong WBGT for ${timestamp}:`, error);
-    }
+  // Always calculate Kong WBGT
+  let wbgt_kong: number;
+  try {
+    const sydneyTimestamp = hourKey + ':00';
+    const kongCalc = calculateKongWBGTPipeline(
+      ta, omEntry?.omData?.wet_bulb || 0, rh, omEntry?.omData?.pressure || 1013.25, omEntry?.omData?.wind_speed || (ws_kmh / 3.6),
+      solar_radiation, omEntry?.omData?.sr_direct || 0, omEntry?.omData?.sr_diffuse || 0,
+      SYDNEY_LAT, SYDNEY_LON, sydneyTimestamp
+    );
+    wbgt_kong = kongCalc.kong_wbgt;
+  } catch (error) {
+    console.error(`[PARSE] Error calculating Kong WBGT for ${timestamp}:`, error);
+    // If Kong calculation fails, use simple calculation as emergency fallback
+    wbgt_kong = calculateWBGT(ta, rh, solar_radiation);
   }
 
   const localTimestamp = new Date(timestamp).toLocaleString('en-AU', {
@@ -1136,6 +1235,11 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   });
+
+  // Build source field showing data provenance
+  const weatherSource = omEntry?.omData ? 'BOM + Open-Meteo' : 'BOM only';
+  const solarSource = solar_radiation > 0 ? (omEntry?.omData ? 'satellite' : 'estimated') : 'night';
+  const source = `${weatherSource} + ${solarSource}`;
 
   return {
     localTimestamp,
@@ -1146,11 +1250,11 @@ function processForecast(forecast: any, timestamp: string, omMap: Record<string,
     solar_radiation: parseFloat(solar_radiation.toFixed(1)),
     cloud_cover: parseFloat((cloudMap[hourKey] || 0).toFixed(1)),
     uv_index: parseFloat((uvMap[hourKey] || 0).toFixed(1)),
-    wbgt: wbgt_kong !== null ? parseFloat(wbgt_kong.toFixed(1)) : parseFloat(wbgt_esi.toFixed(1)),
-    esi: parseFloat(wbgt_esi.toFixed(1)),
+    wbgt: parseFloat(wbgt_kong.toFixed(1)),
+    esi: parseFloat(esi.toFixed(1)),
     apparent_temp: parseFloat(at.toFixed(1)),
     rain_chance: forecast.rain?.chance || 0,
-    source: kongCalculated ? 'kong_wbgt' : (omEntry ? 'hybrid' : (solar_radiation > 0 ? 'bom_plus_estimated' : 'bom_only'))
+    source
   };
 }
 
@@ -1336,6 +1440,12 @@ export class WBGTServerMCP extends McpAgent {
         .describe("Start date in YYYY-MM-DD format (required)"),
       end_date: z.string()
         .describe("End date in YYYY-MM-DD format (required, cannot be today - data not uploaded yet)"),
+      start_time: z.string()
+        .optional()
+        .describe("Optional start time in ISO format (YYYY-MM-DDTHH:MM:SS) for filtering to specific time window. If provided with end_time, returns max values during that window."),
+      end_time: z.string()
+        .optional()
+        .describe("Optional end time in ISO format (YYYY-MM-DDTHH:MM:SS) for filtering to specific time window. If provided with start_time, returns max values during that window."),
       latitude: z.number()
         .optional()
         .describe("Optional latitude (default: -33.8018 for Sydney)"),
@@ -1349,16 +1459,28 @@ export class WBGTServerMCP extends McpAgent {
 
     this.server.tool(
       "get_historic_observations",
-      "Get historical WBGT observations using Kong method with satellite solar radiation priority and archive fallback. Supports global locations with automatic timezone detection. All timestamps returned in local time. Solar radiation prioritizes satellite data (observational) over archive data (model).",
+      "Get historical WBGT observations using Kong method with satellite solar radiation priority and archive fallback. Supports global locations with automatic timezone detection. All timestamps returned in local time. Optionally filter to specific time window with start_time/end_time parameters.",
       historicObservationsSchema,
       async (params: any) => {
-        const { start_date, end_date, latitude, longitude, timezone } = params;
+        const { start_date, end_date, start_time, end_time, latitude, longitude, timezone } = params;
         const lat = latitude || SYDNEY_LAT;
         const lon = longitude || SYDNEY_LON;
         const tz = timezone || 'auto';
 
         try {
-          const kongData = await fetchKongWBGT(start_date, end_date, lat, lon, tz);
+          let kongData = await fetchKongWBGT(start_date, end_date, lat, lon, tz);
+
+          // If start_time and end_time are provided, filter to that window and return max values
+          if (start_time && end_time) {
+            const filtered = getMaxInRange(kongData, start_time, end_time);
+            if (filtered) {
+              kongData = [filtered];
+            } else {
+              // Try interpolation fallback
+              const interpolated = getInterpolatedMaxInRange(kongData, start_time, end_time);
+              kongData = interpolated ? [interpolated] : [];
+            }
+          }
 
           return {
             content: [{
@@ -1369,7 +1491,9 @@ export class WBGTServerMCP extends McpAgent {
                 count: kongData.length,
                 location: { latitude: lat, longitude: lon },
                 timezone: tz,
-                note: "Kong WBGT historical observations with satellite solar radiation (observational) prioritized over archive (model). All timestamps in local time."
+                note: start_time && end_time
+                  ? `Max WBGT values during time window ${start_time} to ${end_time}. All timestamps in local time.`
+                  : "Kong WBGT historical observations with satellite solar radiation (observational) prioritized over archive (model). All timestamps in local time."
               }, null, 2)
             }]
           };
@@ -1471,48 +1595,611 @@ async function handleGetForecast(corsHeaders: Record<string, string>): Promise<R
   }, 200, corsHeaders);
 }
 
-// Handler: GET /api/observations
-async function handleGetObservations(url: URL, corsHeaders: Record<string, string>): Promise<Response> {
+// Helper: Fetch satellite solar radiation data from Open-Meteo
+async function fetchSatelliteRadiation(
+  startDate: string,
+  endDate: string,
+  latitude: number,
+  longitude: number
+): Promise<SRData | null> {
+  const satelliteUrl = `https://satellite-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&hourly=shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant&models=satellite_radiation_seamless&timezone=auto&start_date=${startDate}&end_date=${endDate}`;
+
+  try {
+    console.log(`[SOLAR] Fetching satellite solar radiation for ${startDate} to ${endDate}...`);
+    const response = await fetch(satelliteUrl);
+
+    if (!response.ok) {
+      console.log(`[SOLAR] Satellite API returned ${response.status}, will return null`);
+      return null;
+    }
+
+    const data = await response.json() as SRData;
+    const times = data?.hourly?.time || [];
+    const srInstant = data?.hourly?.shortwave_radiation_instant || [];
+
+    if (times.length === 0 || srInstant.length === 0) {
+      console.log(`[SOLAR] No solar radiation data available`);
+      return null;
+    }
+
+    console.log(`[SOLAR] Retrieved ${times.length} solar radiation data points`);
+    return data;
+  } catch (error) {
+    console.error(`[SOLAR] Error fetching satellite data:`, error);
+    return null;
+  }
+}
+
+// Helper: Combine Visual Crossing weather data with solar radiation to calculate Kong WBGT
+async function combineVisualCrossingWithSolar(
+  vcData: VisualCrossingObservation[],
+  solarData: SRData | null,
+  latitude: number,
+  longitude: number,
+  timezone: string = 'Australia/Sydney'
+): Promise<any[]> {
+  const results: any[] = [];
+
+  // Convert Visual Crossing observations to hourly arrays
+  const vcFetcher = new VisualCrossingFetcher('dummy'); // API key not needed for conversion
+  const arrays = vcFetcher.convertToHourlyArrays(vcData, timezone);
+
+  // Build solar radiation time-indexed map
+  const solarMap: Record<string, { sr: number; direct: number; diffuse: number }> = {};
+  if (solarData?.hourly) {
+    const times = solarData.hourly.time || [];
+    const srInstant = solarData.hourly.shortwave_radiation_instant || [];
+    const srDirect = solarData.hourly.direct_radiation_instant || [];
+    const srDiffuse = solarData.hourly.diffuse_radiation_instant || [];
+
+    times.forEach((time: string, idx: number) => {
+      // Use hour key for matching (e.g., "2025-11-19T14")
+      const hourKey = time.substring(0, 13);
+      solarMap[hourKey] = {
+        sr: srInstant[idx] || 0,
+        direct: srDirect[idx] || 0,
+        diffuse: srDiffuse[idx] || 0
+      };
+    });
+  }
+
+  console.log(`[VC-SOLAR] Combining ${arrays.times.length} Visual Crossing observations with solar data`);
+
+  // Combine weather data with solar radiation and calculate WBGT
+  arrays.times.forEach((time: string, idx: number) => {
+    const hourKey = time.substring(0, 13);
+    const solar = solarMap[hourKey] || { sr: 0, direct: 0, diffuse: 0 };
+
+    const Ta = arrays.temps[idx];           // Air temperature (°C)
+    const RH = arrays.humidity[idx];        // Relative humidity (%)
+    const Tdew = arrays.dewpoints[idx];     // Dew point (°C)
+    const Tw = arrays.wetBulbs[idx];        // Wet bulb (°C) - pre-calculated
+    const P = arrays.pressures[idx];        // Pressure (hPa)
+    const u = arrays.windSpeeds[idx];       // Wind speed (m/s) - already converted from km/h
+    const cloudCover = arrays.cloudCovers[idx]; // Cloud cover (%)
+
+    // Calculate Kong WBGT using the pipeline
+    const kongCalc = calculateKongWBGTPipelineByTimezone(
+      Ta, Tw, RH, P, u,
+      solar.sr, solar.direct, solar.diffuse,
+      latitude, longitude, time,
+      10,   // UTC offset for Sydney (AEDT = UTC+11, AEST = UTC+10, using 10 as base)
+      true  // has DST
+    );
+
+    results.push({
+      timestamp: time,
+      temperature: parseFloat(Ta.toFixed(1)),
+      humidity: Math.round(RH),
+      dew_point: parseFloat(Tdew.toFixed(1)),
+      wet_bulb: parseFloat(Tw.toFixed(1)),
+      wind_speed_ms: parseFloat(u.toFixed(2)),
+      pressure_hpa: parseFloat(P.toFixed(1)),
+      solar_radiation: parseFloat(solar.sr.toFixed(1)),
+      solar_direct: parseFloat(solar.direct.toFixed(1)),
+      solar_diffuse: parseFloat(solar.diffuse.toFixed(1)),
+      cloud_cover: parseFloat(cloudCover.toFixed(1)),
+      wbgt: parseFloat(kongCalc.kong_wbgt.toFixed(1)),
+      esi: parseFloat(kongCalc.esi.toFixed(1)),
+      black_globe_temp: parseFloat(kongCalc.black_globe_temp.toFixed(1)),
+      natural_wet_bulb: parseFloat(kongCalc.natural_wet_bulb_temp.toFixed(1)),
+      solar_zenith_angle: parseFloat(kongCalc.solar_zenith_angle.toFixed(1)),
+      weather_source: 'Visual Crossing',
+      solar_source: solar.sr > 0 ? 'satellite' : 'none'
+    });
+  });
+
+  console.log(`[VC-SOLAR] Calculated WBGT for ${results.length} observations`);
+  return results;
+}
+
+// Handler: GET /api/observations (with 3-tier routing)
+async function handleGetObservations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
   const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : undefined;
 
-  // Determine data source based on location
-  let dataSource: { station: any; source: string; distance?: number } | null = null;
-  let bomUrl: string | null = null;
+  // Use default Sydney coordinates if not specified
+  const lat = latitude ?? SYDNEY_LAT;
+  const lon = longitude ?? SYDNEY_LON;
 
-  if (latitude !== undefined && longitude !== undefined) {
-    dataSource = determineDataSource(latitude, longitude);
-    bomUrl = dataSource.station?.jsonUrl ?? null;
+  // **3-TIER ROUTING LOGIC**
+  // Determine which data source to use based on data age
+  let dataSourceName: string;
+  let observations: any[];
+  let additionalInfo: any = {};
+
+  if (start_time) {
+    // Calculate age of requested data
+    const now = new Date();
+    const startDate = new Date(start_time);
+    const ageInDays = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    console.log(`[OBSERVATIONS] Data age: ${ageInDays.toFixed(1)} days (start_time: ${start_time})`);
+
+    if (ageInDays <= 3) {
+      // **TIER 1: Recent data (0-3 days ago) - Use BOM + Open-Meteo**
+      console.log(`[OBSERVATIONS] TIER 1: Using BOM + Open-Meteo for recent data`);
+      dataSourceName = 'BOM + Open-Meteo';
+
+      // Determine BOM station based on location
+      let dataSource: { station: any; source: string; distance?: number } | null = null;
+      let bomUrl: string | null = null;
+
+      if (latitude !== undefined && longitude !== undefined) {
+        dataSource = determineDataSource(latitude, longitude);
+        bomUrl = dataSource.station?.jsonUrl ?? null;
+      } else {
+        bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+        dataSource = {
+          station: DEFAULT_BOM_STATION,
+          source: DEFAULT_BOM_STATION.name,
+          distance: undefined
+        };
+      }
+
+      const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
+      observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time, end_time);
+
+      additionalInfo = {
+        station: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+        distance_km: dataSource?.distance
+      };
+
+    } else if (ageInDays <= 90) {
+      // **TIER 2: Medium-term data (3-90 days ago) - Use Open-Meteo Only**
+      console.log(`[OBSERVATIONS] TIER 2: Using Open-Meteo only for ${ageInDays.toFixed(1)} day old data`);
+
+      dataSourceName = 'Open-Meteo Only';
+
+      try {
+        // Extract date range from start_time and end_time
+        const startDateStr = start_time.split('T')[0];  // "YYYY-MM-DD"
+        const endDateStr = end_time ? end_time.split('T')[0] : new Date().toISOString().split('T')[0];
+
+        // Use enhanced weather fetcher to get Open-Meteo data with solar radiation
+        const { WeatherFetcherService } = await import('./services/weather/weather-fetcher.service');
+        const weatherData = await WeatherFetcherService.fetchWeather({
+          latitude: lat,
+          longitude: lon,
+          startDate: startDateStr,
+          endDate: endDateStr,
+          timezone: 'auto',
+          useEnhancedSolarRadiation: true
+        });
+
+        // Parse weather data with Kong WBGT calculations (similar to parseHistoricalObservations)
+        observations = await parseHistoricalObservationsWithSolar(weatherData, lat, lon);
+
+        // Filter to requested time window if both start_time and end_time provided
+        if (start_time && end_time) {
+          const filtered = getMaxInRange(observations, start_time, end_time);
+          observations = filtered ? [filtered] : [];
+
+          // Try interpolation fallback if no exact match
+          if (!filtered) {
+            const interpolated = getInterpolatedMaxInRange(observations, start_time, end_time);
+            observations = interpolated ? [interpolated] : [];
+          }
+        }
+
+        additionalInfo = {
+          location: { latitude: lat, longitude: lon },
+          date_range: { start: startDateStr, end: endDateStr },
+          solar_radiation_source: weatherData.solarRadiationSource || 'standard'
+        };
+
+      } catch (error: any) {
+        return errorResponse(
+          'OPENMETEO_FETCH_FAILED',
+          'Failed to fetch Open-Meteo data for tier 2',
+          500,
+          corsHeaders,
+          {
+            reason: error?.message || 'Unknown error',
+            data_age_days: ageInDays.toFixed(1),
+            tier: 'tier_2',
+            location: { latitude: lat, longitude: lon }
+          },
+          url.pathname
+        );
+      }
+
+    } else {
+      // **TIER 3: Long-term historical data (90+ days ago) - Redirect to /historic_observations**
+      console.log(`[OBSERVATIONS] TIER 3: Data too old (${ageInDays.toFixed(1)} days), redirecting to /historic_observations`);
+
+      return errorResponse(
+        'USE_HISTORIC_ENDPOINT',
+        'For data older than 90 days, use /api/historic_observations endpoint',
+        400,
+        corsHeaders,
+        {
+          data_age_days: ageInDays.toFixed(1),
+          tier: 'tier_3',
+          requested_date: start_time,
+          recommendation: {
+            endpoint: '/api/historic_observations',
+            parameters: {
+              start_date: start_time.split('T')[0],
+              end_date: end_time ? end_time.split('T')[0] : start_time.split('T')[0],
+              start_time: start_time,
+              end_time: end_time,
+              latitude: lat,
+              longitude: lon
+            }
+          }
+        },
+        url.pathname
+      );
+    }
+
   } else {
-    // No coordinates specified - use default Sydney Olympic Park station
-    bomUrl = DEFAULT_BOM_STATION.jsonUrl;
-    dataSource = {
-      station: DEFAULT_BOM_STATION,
-      source: DEFAULT_BOM_STATION.name,
-      distance: undefined
+    // **No time filter: Use existing recent data logic (Tier 1 - BOM + Open-Meteo)**
+    console.log(`[OBSERVATIONS] No start_time specified, using TIER 1 (recent data)`);
+    dataSourceName = 'BOM + Open-Meteo (recent)';
+
+    // Determine BOM station based on location
+    let dataSource: { station: any; source: string; distance?: number } | null = null;
+    let bomUrl: string | null = null;
+
+    if (latitude !== undefined && longitude !== undefined) {
+      dataSource = determineDataSource(latitude, longitude);
+      bomUrl = dataSource.station?.jsonUrl ?? null;
+    } else {
+      bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+      dataSource = {
+        station: DEFAULT_BOM_STATION,
+        source: DEFAULT_BOM_STATION.name,
+        distance: undefined
+      };
+    }
+
+    const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
+    observations = parseObservationsKong(data.srData!, data.bomData ?? null, undefined, undefined);
+
+    additionalInfo = {
+      station: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+      distance_km: dataSource?.distance
     };
   }
 
-  const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
-  const observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time || undefined, end_time || undefined);
-
+  // Return unified response
   return jsonResponse({
     success: true,
     data: observations,
     count: observations.length,
-    source: dataSource?.source ?? DEFAULT_BOM_STATION.name,
-    distance_km: dataSource?.distance,
+    source: dataSourceName,
+    ...additionalInfo,
     timestamp: new Date().toISOString(),
-    note: start_time ? `Max WBGT conditions during activity from ${start_time} to ${end_time}` : "Past 72-hour WBGT observations (Kong method)"
+    note: start_time && end_time
+      ? `WBGT observations from ${start_time} to ${end_time} (${dataSourceName})`
+      : "Past 72-hour WBGT observations (Kong method)"
   }, 200, corsHeaders);
+}
+
+// Helper: Combine Meteostat weather data with solar radiation to calculate Kong WBGT
+async function combineMeteostatWithSolar(
+  meteostatData: import('./utils/meteostat-fetcher').MeteostatHourlyObservation[],
+  solarData: SRData | null,
+  latitude: number,
+  longitude: number,
+  timezone: string = 'Australia/Sydney'
+): Promise<any[]> {
+  const results: any[] = [];
+
+  // Build solar radiation time-indexed map
+  const solarMap: Record<string, { sr: number; direct: number; diffuse: number }> = {};
+  if (solarData?.hourly) {
+    const times = solarData.hourly.time || [];
+    const srInstant = solarData.hourly.shortwave_radiation_instant || [];
+    const srDirect = solarData.hourly.direct_radiation_instant || [];
+    const srDiffuse = solarData.hourly.diffuse_radiation_instant || [];
+
+    times.forEach((time: string, idx: number) => {
+      // Use hour key for matching (e.g., "2025-11-19T14")
+      const hourKey = time.substring(0, 13);
+      solarMap[hourKey] = {
+        sr: srInstant[idx] || 0,
+        direct: srDirect[idx] || 0,
+        diffuse: srDiffuse[idx] || 0
+      };
+    });
+  }
+
+  console.log(`[METEOSTAT-SOLAR] Combining ${meteostatData.length} Meteostat observations with solar data`);
+
+  const vcFetcher = new VisualCrossingFetcher('dummy'); // For wet bulb calculation
+
+  // Combine weather data with solar radiation and calculate WBGT
+  meteostatData.forEach((obs) => {
+    // Extract hour key from Meteostat timestamp (ISO format: "2025-11-19T14:00:00")
+    const hourKey = obs.time.substring(0, 13);
+    const solar = solarMap[hourKey] || { sr: 0, direct: 0, diffuse: 0 };
+
+    const Ta = obs.temperature;           // Air temperature (°C)
+    const RH = obs.humidity;              // Relative humidity (%)
+    const Tdew = obs.dew_point;           // Dew point (°C)
+    const P = obs.pressure;               // Pressure (hPa)
+    const u = obs.wind_speed;             // Wind speed (m/s) - already converted from km/h
+
+    // Calculate wet bulb temperature using Stull (2011) approximation
+    const Tw = vcFetcher['calculateWetBulb']?.(Ta, RH, P) || 0;
+
+    // Calculate Kong WBGT using the pipeline
+    const kongCalc = calculateKongWBGTPipelineByTimezone(
+      Ta, Tw, RH, P, u,
+      solar.sr, solar.direct, solar.diffuse,
+      latitude, longitude, obs.time,
+      10,   // UTC offset for Sydney (AEDT = UTC+11, AEST = UTC+10, using 10 as base)
+      true  // has DST
+    );
+
+    results.push({
+      timestamp: obs.time,
+      temperature: parseFloat(Ta.toFixed(1)),
+      humidity: Math.round(RH),
+      dew_point: parseFloat(Tdew.toFixed(1)),
+      wind_speed_ms: parseFloat(u.toFixed(2)),
+      pressure_hpa: parseFloat(P.toFixed(1)),
+      solar_radiation: parseFloat(solar.sr.toFixed(1)),
+      solar_direct: parseFloat(solar.direct.toFixed(1)),
+      solar_diffuse: parseFloat(solar.diffuse.toFixed(1)),
+      wbgt: parseFloat(kongCalc.kong_wbgt.toFixed(1)),
+      esi: parseFloat(kongCalc.esi.toFixed(1)),
+      black_globe_temp: parseFloat(kongCalc.black_globe_temp.toFixed(1)),
+      natural_wet_bulb: parseFloat(kongCalc.natural_wet_bulb_temp.toFixed(1)),
+      solar_zenith_angle: parseFloat(kongCalc.solar_zenith_angle.toFixed(1)),
+      weather_source: 'Meteostat',
+      solar_source: solar.sr > 0 ? 'satellite' : 'none',
+      precipitation: obs.precipitation,
+      snow_depth: obs.snow_depth || 0
+    });
+  });
+
+  console.log(`[METEOSTAT-SOLAR] Calculated WBGT for ${results.length} observations`);
+  return results;
+}
+
+// Handler: GET /api/VC_observations (Visual Crossing + OpenMeteo Solar)
+async function handleGetVC_Observations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
+  const start_time = url.searchParams.get('start_time') || undefined;
+  const end_time = url.searchParams.get('end_time') || undefined;
+  const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
+  const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : undefined;
+
+  // Use default Sydney coordinates if not specified
+  const lat = latitude ?? SYDNEY_LAT;
+  const lon = longitude ?? SYDNEY_LON;
+
+  // Check if Visual Crossing API key is available
+  const vcApiKey = env?.VISUAL_CROSSING_API_KEY;
+  if (!vcApiKey) {
+    return errorResponse(
+      'VISUAL_CROSSING_API_KEY_MISSING',
+      'Visual Crossing API key not configured. This endpoint requires Visual Crossing data.',
+      500,
+      corsHeaders,
+      {
+        endpoint: '/api/VC_observations',
+        data_source: 'Visual Crossing + OpenMeteo Solar'
+      },
+      url.pathname
+    );
+  }
+
+  // Extract date range from start_time and end_time
+  const startDateStr = start_time ? start_time.split('T')[0] : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const endDateStr = end_time ? end_time.split('T')[0] : new Date().toISOString().split('T')[0];
+
+  console.log(`[VC_OBSERVATIONS] Using Visual Crossing + OpenMeteo Solar for ${startDateStr} to ${endDateStr} at (${lat}, ${lon})`);
+
+  try {
+    // Fetch Visual Crossing weather data (observational data from NOAA ISD)
+    const vcFetcher = new VisualCrossingFetcher(vcApiKey);
+    const vcResponse = await vcFetcher.fetchObservations(lat, lon, startDateStr, endDateStr);
+
+    // Fetch solar radiation from Open-Meteo satellite API
+    const solarData = await fetchSatelliteRadiation(startDateStr, endDateStr, lat, lon);
+
+    // Combine Visual Crossing weather + Open-Meteo solar → Kong WBGT
+    const observations = await combineVisualCrossingWithSolar(vcResponse.observations, solarData, lat, lon);
+
+    // Filter to requested time window if both start_time and end_time provided
+    let filteredObservations = observations;
+    if (start_time && end_time) {
+      filteredObservations = observations.filter(obs => {
+        const obsTime = new Date(obs.timestamp).getTime();
+        const startMs = new Date(start_time).getTime();
+        const endMs = new Date(end_time).getTime();
+        return obsTime >= startMs && obsTime <= endMs;
+      });
+
+      // If no exact data in range, try max range filter
+      if (filteredObservations.length === 0) {
+        const maxInRange = getMaxInRange(observations, start_time, end_time);
+        filteredObservations = maxInRange ? [maxInRange] : [];
+
+        // If still no data, try interpolation fallback
+        if (!maxInRange) {
+          const interpolated = getInterpolatedMaxInRange(observations, start_time, end_time);
+          filteredObservations = interpolated ? [interpolated] : [];
+        }
+      }
+    }
+
+    // Get usage stats from fetcher
+    const usageStats = vcFetcher.getUsageStats();
+
+    // Format station information for response
+    const stationInfo = vcResponse.stations ? Object.entries(vcResponse.stations).map(([id, station]) => ({
+      id,
+      name: station.name,
+      distance_km: parseFloat(station.distance.toFixed(1)),
+      latitude: station.latitude,
+      longitude: station.longitude
+    })) : [];
+
+    return jsonResponse({
+      success: true,
+      data: filteredObservations,
+      count: filteredObservations.length,
+      source: 'Visual Crossing + OpenMeteo Solar',
+      visual_crossing: {
+        records_used: usageStats.recordsUsed,
+        records_remaining: usageStats.recordsRemaining,
+        reset_time: usageStats.resetTime,
+        resolved_address: vcResponse.resolvedAddress,
+        data_type: stationInfo.length > 0 ? 'observational' : 'model',
+        contributing_stations: stationInfo
+      },
+      location: { latitude: lat, longitude: lon },
+      date_range: { start: startDateStr, end: endDateStr },
+      timestamp: new Date().toISOString(),
+      note: start_time && end_time
+        ? `WBGT observations from ${start_time} to ${end_time} (Visual Crossing + OpenMeteo Solar)`
+        : `WBGT observations from ${startDateStr} to ${endDateStr} (Visual Crossing + OpenMeteo Solar)`
+    }, 200, corsHeaders);
+
+  } catch (error: any) {
+    return errorResponse(
+      'VC_OBSERVATIONS_FETCH_FAILED',
+      'Failed to fetch Visual Crossing observations',
+      500,
+      corsHeaders,
+      {
+        reason: error?.message || 'Unknown error',
+        location: { latitude: lat, longitude: lon },
+        date_range: { start: startDateStr, end: endDateStr }
+      },
+      url.pathname
+    );
+  }
+}
+
+// Handler: GET /api/meteostat_observations (Meteostat + OpenMeteo Solar)
+async function handleGetMeteostatObservations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
+  const start_time = url.searchParams.get('start_time') || undefined;
+  const end_time = url.searchParams.get('end_time') || undefined;
+  const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
+  const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : undefined;
+
+  // Use default Sydney coordinates if not specified
+  const lat = latitude ?? SYDNEY_LAT;
+  const lon = longitude ?? SYDNEY_LON;
+
+  // Extract date range from start_time and end_time
+  const startDateStr = start_time ? start_time.split('T')[0] : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const endDateStr = end_time ? end_time.split('T')[0] : new Date().toISOString().split('T')[0];
+
+  console.log(`[METEOSTAT_OBSERVATIONS] Using Meteostat + OpenMeteo Solar for ${startDateStr} to ${endDateStr} at (${lat}, ${lon})`);
+
+  try {
+    // Dynamically import Meteostat fetcher to avoid circular dependencies
+    const { MeteostatFetcher } = await import('./utils/meteostat-fetcher');
+
+    // Fetch Meteostat weather data (observational data from weather stations)
+    const meteostatFetcher = new MeteostatFetcher();
+    const meteostatResponse = await meteostatFetcher.fetchObservations(lat, lon, startDateStr, endDateStr);
+
+    // Fetch solar radiation from Open-Meteo satellite API
+    const solarData = await fetchSatelliteRadiation(startDateStr, endDateStr, lat, lon);
+
+    // Combine Meteostat weather + Open-Meteo solar → Kong WBGT
+    const observations = await combineMeteostatWithSolar(meteostatResponse.observations, solarData, lat, lon);
+
+    // Filter to requested time window if both start_time and end_time provided
+    let filteredObservations = observations;
+    if (start_time && end_time) {
+      filteredObservations = observations.filter(obs => {
+        const obsTime = new Date(obs.timestamp).getTime();
+        const startMs = new Date(start_time).getTime();
+        const endMs = new Date(end_time).getTime();
+        return obsTime >= startMs && obsTime <= endMs;
+      });
+
+      // If no exact data in range, try max range filter
+      if (filteredObservations.length === 0) {
+        const maxInRange = getMaxInRange(observations, start_time, end_time);
+        filteredObservations = maxInRange ? [maxInRange] : [];
+
+        // If still no data, try interpolation fallback
+        if (!maxInRange) {
+          const interpolated = getInterpolatedMaxInRange(observations, start_time, end_time);
+          filteredObservations = interpolated ? [interpolated] : [];
+        }
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      data: filteredObservations,
+      count: filteredObservations.length,
+      source: 'Meteostat + OpenMeteo Solar',
+      meteostat: {
+        station: {
+          id: meteostatResponse.station.id,
+          name: meteostatResponse.station.name,
+          latitude: meteostatResponse.station.latitude,
+          longitude: meteostatResponse.station.longitude,
+          elevation: meteostatResponse.station.elevation,
+          distance_km: meteostatResponse.station.distance
+            ? parseFloat(meteostatResponse.station.distance.toFixed(1))
+            : undefined
+        },
+        generated_at: meteostatResponse.generated_at
+      },
+      location: { latitude: lat, longitude: lon },
+      date_range: { start: startDateStr, end: endDateStr },
+      timestamp: new Date().toISOString(),
+      note: start_time && end_time
+        ? `WBGT observations from ${start_time} to ${end_time} (Meteostat + OpenMeteo Solar)`
+        : `WBGT observations from ${startDateStr} to ${endDateStr} (Meteostat + OpenMeteo Solar)`
+    }, 200, corsHeaders);
+
+  } catch (error: any) {
+    return errorResponse(
+      'METEOSTAT_OBSERVATIONS_FETCH_FAILED',
+      'Failed to fetch Meteostat observations',
+      500,
+      corsHeaders,
+      {
+        reason: error?.message || 'Unknown error',
+        location: { latitude: lat, longitude: lon },
+        date_range: { start: startDateStr, end: endDateStr }
+      },
+      url.pathname
+    );
+  }
 }
 
 // Handler: GET /api/historic_observations
 async function handleGetHistoricObservations(url: URL, corsHeaders: Record<string, string>): Promise<Response> {
   const start_date = url.searchParams.get('start_date');
   const end_date = url.searchParams.get('end_date');
+  const start_time = url.searchParams.get('start_time') || undefined;
+  const end_time = url.searchParams.get('end_time') || undefined;
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : SYDNEY_LAT;
   const longitude = url.searchParams.get('longitude') ? parseFloat(url.searchParams.get('longitude')!) : SYDNEY_LON;
   const timezone = url.searchParams.get('timezone') || 'auto';
@@ -1525,12 +2212,12 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
       corsHeaders,
       {
         required: ['start_date', 'end_date'],
-        optional: ['latitude', 'longitude', 'timezone'],
-        format: 'YYYY-MM-DD for dates',
-        note: 'end_date cannot be today. timezone defaults to "auto" (local time for coordinates). All dates/times in local time.',
+        optional: ['start_time', 'end_time', 'latitude', 'longitude', 'timezone'],
+        format: 'YYYY-MM-DD for dates, YYYY-MM-DDTHH:MM:SS for times',
+        note: 'end_date cannot be today. If start_time and end_time provided, returns max values during that window. timezone defaults to "auto" (local time for coordinates).',
         examples: {
-          'Sydney': 'timezone=auto&latitude=-33.8018&longitude=151.1254',
-          'Tokyo': 'timezone=auto&latitude=35.6762&longitude=139.6503'
+          'Sydney full day': 'start_date=2025-11-15&end_date=2025-11-15&latitude=-33.8018&longitude=151.1254',
+          'Sydney time window': 'start_date=2025-11-15&end_date=2025-11-15&start_time=2025-11-15T12:00:00&end_time=2025-11-15T14:00:00&latitude=-33.8018&longitude=151.1254'
         }
       },
       url.pathname
@@ -1538,7 +2225,20 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
   }
 
   try {
-    const kongData = await fetchKongWBGT(start_date, end_date, latitude, longitude, timezone);
+    let kongData = await fetchKongWBGT(start_date, end_date, latitude, longitude, timezone);
+
+    // If start_time and end_time are provided, filter to that window and return max values
+    if (start_time && end_time) {
+      const filtered = getMaxInRange(kongData, start_time, end_time);
+      if (filtered) {
+        kongData = [filtered];
+      } else {
+        // Try interpolation fallback
+        const interpolated = getInterpolatedMaxInRange(kongData, start_time, end_time);
+        kongData = interpolated ? [interpolated] : [];
+      }
+    }
+
     return jsonResponse({
       success: true,
       data: kongData,
@@ -1546,7 +2246,9 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
       timestamp: new Date().toISOString(),
       location: { latitude, longitude },
       timezone: timezone,
-      note: 'All timestamps in local time. Solar radiation prioritizes satellite data with archive fallback.'
+      note: start_time && end_time
+        ? `Max WBGT values during time window ${start_time} to ${end_time}. All timestamps in local time.`
+        : 'All timestamps in local time. Solar radiation prioritizes satellite data with archive fallback.'
     }, 200, corsHeaders);
   } catch (error: any) {
     return errorResponse(
@@ -1558,6 +2260,7 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
         reason: error?.message || 'Unknown error',
         location: { latitude, longitude },
         dateRange: { start_date, end_date },
+        timeWindow: start_time && end_time ? { start_time, end_time } : undefined,
         timezone: timezone
       },
       url.pathname
@@ -1677,7 +2380,81 @@ paths:
             default: auto
       responses:
         '200':
-          description: Historical WBGT observations retrieved successfully`;
+          description: Historical WBGT observations retrieved successfully
+  /api/v1/VC_observations:
+    get:
+      summary: Get Visual Crossing observations with OpenMeteo solar radiation (1970-present)
+      tags:
+        - Historical Data
+      parameters:
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional start time in ISO format (defaults to 3 days ago)
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional end time in ISO format (defaults to now)
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Latitude for location
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Longitude for location
+      responses:
+        '200':
+          description: Visual Crossing observations retrieved successfully
+  /api/v1/meteostat_observations:
+    get:
+      summary: Get Meteostat observations with OpenMeteo solar radiation (1943-present)
+      tags:
+        - Historical Data
+      parameters:
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional start time in ISO format (defaults to 3 days ago)
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional end time in ISO format (defaults to now)
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Latitude for location
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Longitude for location
+      responses:
+        '200':
+          description: Meteostat observations retrieved successfully`;
 
   return new Response(openApiYaml, {
     headers: {
@@ -1696,10 +2473,12 @@ function handleApiRoot(corsHeaders: Record<string, string>): Response {
     version: '1.0.0',
     deprecated: false,
     endpoints: {
-      'GET /api/current': 'Current WBGT conditions in Sydney',
+      'GET /api/current': 'Current WBGT conditions in Sydney (< 3 days: BOM + OpenMeteo)',
       'GET /api/forecast': '72-hour WBGT forecast for Sydney',
-      'GET /api/observations': 'Past 72-hour observations (Kong method)',
-      'GET /api/historic_observations': 'Historical WBGT data (Kong method) with timezone support',
+      'GET /api/observations': '3-tier observations: BOM for <3d, OpenMeteo for 3d-90d, redirects to historic for >90d',
+      'GET /api/VC_observations': 'Visual Crossing observations (1970-present) + OpenMeteo solar (observational weather data)',
+      'GET /api/meteostat_observations': 'Meteostat observations (1943-present) + OpenMeteo solar (station-based weather data)',
+      'GET /api/historic_observations': 'Historical WBGT data (Kong method) with timezone support (90+ days: NOAA ISD + OpenMeteo solar)',
       'GET /api/health': 'Health check'
     },
     documentation: {
@@ -1746,7 +2525,7 @@ function addDeprecationHeader(corsHeaders: Record<string, string>, version: stri
   };
 }
 
-async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promise<Response> {
+async function handleHTTPRequest(request: Request, env: any, _ctx: any): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const corsHeaders = createCorsHeaders();
@@ -1760,7 +2539,9 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
     // API Routes (Primary)
     if (pathname === '/api/current' && request.method === 'GET') return await handleGetCurrent(corsHeaders);
     if (pathname === '/api/forecast' && request.method === 'GET') return await handleGetForecast(corsHeaders);
-    if (pathname === '/api/observations' && request.method === 'GET') return await handleGetObservations(url, corsHeaders);
+    if (pathname === '/api/observations' && request.method === 'GET') return await handleGetObservations(url, corsHeaders, env);
+    if (pathname === '/api/VC_observations' && request.method === 'GET') return await handleGetVC_Observations(url, corsHeaders, env);
+    if (pathname === '/api/meteostat_observations' && request.method === 'GET') return await handleGetMeteostatObservations(url, corsHeaders, env);
     if (pathname === '/api/historic_observations' && request.method === 'GET') return await handleGetHistoricObservations(url, corsHeaders);
     if (pathname === '/api/health' && request.method === 'GET') return handleHealth(corsHeaders);
     if (pathname === '/api' && request.method === 'GET') return handleApiRoot(corsHeaders);
@@ -1805,7 +2586,7 @@ async function handleHTTPRequest(request: Request, _env: any, _ctx: any): Promis
       return response;
     }
     if (pathname === '/api/v1/observations' && request.method === 'GET') {
-      const response = await handleGetObservations(url, addDeprecationHeader(corsHeaders, '2'));
+      const response = await handleGetObservations(url, addDeprecationHeader(corsHeaders, '2'), env);
       return response;
     }
     if (pathname === '/api/v1/historic_observations' && request.method === 'GET') {

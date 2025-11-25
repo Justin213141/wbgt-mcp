@@ -19,7 +19,7 @@ export class ISDFetcher {
 
   /**
    * Fetch and decompress a single ISD file from S3
-   * Uses Cloudflare Workers' native DecompressionStream
+   * Uses Cloudflare Workers' native DecompressionStream with robust error handling
    * **PERFORMANCE OPTIMIZATION**: Uses Cloudflare Cache API for S3 responses
    */
   async fetchISDFile(stationId: string, year: number): Promise<string> {
@@ -40,7 +40,7 @@ export class ISDFetcher {
       }
     } catch (e) {
       // Cache API not available (e.g., in development)
-      console.log(`[ISD-FETCH] Cache API not available`);
+      console.warn(`[ISD-FETCH] Cache API not available:`, e);
     }
 
     console.log(`[ISD-FETCH] Fetching from S3: ${url}`);
@@ -55,26 +55,44 @@ export class ISDFetcher {
         throw new Error(`S3 fetch failed: ${response.status} ${response.statusText}`);
       }
 
-      // Decompress using Cloudflare Workers DecompressionStream
-      const decompressed = response.body?.pipeThrough(new DecompressionStream('gzip'));
-
-      if (!decompressed) {
-        throw new Error('Failed to create decompression stream');
+      // Check if response has body
+      if (!response.body) {
+        throw new Error('Response body is null');
       }
 
-      const reader = decompressed.getReader();
-      const decoder = new TextDecoder();
-      let result = '';
-      let chunks = 0;
+      let result: string;
+      try {
+        // Method 1: Try direct decompression with Response API
+        // Some environments can handle gzip transparently
+        const decompressedResponse = new Response(response.body, {
+          headers: { 'content-encoding': 'gzip' }
+        });
+        result = await decompressedResponse.text();
+        console.log(`[ISD-FETCH] Successfully decompressed using Response API (${result.length} bytes)`);
+      } catch (decompressionError) {
+        console.warn(`[ISD-FETCH] Response API decompression failed, trying DecompressionStream:`, decompressionError);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        result += decoder.decode(value, { stream: true });
-        chunks++;
+        // Method 2: Use DecompressionStream as fallback
+        try {
+          const decompressed = response.body.pipeThrough(new DecompressionStream('gzip'));
+          const reader = decompressed.getReader();
+          const decoder = new TextDecoder();
+          result = '';
+          let chunks = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            result += decoder.decode(value, { stream: true });
+            chunks++;
+          }
+
+          console.log(`[ISD-FETCH] Successfully decompressed ${chunks} chunks using DecompressionStream (${result.length} bytes)`);
+        } catch (decompressionStreamError) {
+          console.error(`[ISD-FETCH] DecompressionStream also failed:`, decompressionStreamError);
+          throw new Error(`Failed to decompress ISD file: ${decompressionStreamError instanceof Error ? decompressionStreamError.message : 'Unknown error'}`);
+        }
       }
-
-      console.log(`[ISD-FETCH] Successfully decompressed ${chunks} chunks, ${result.length} bytes`);
 
       // Store in cache for future requests (1 day TTL)
       if (cache) {

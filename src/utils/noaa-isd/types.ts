@@ -18,6 +18,7 @@ export interface ISDStation {
 
 export interface ISDObservation {
   timestamp: string;           // ISO format UTC timestamp
+  station_id?: string;         // Station ID (USAF-WBAN)
   temperature?: number;        // °C
   dew_point?: number;          // °C
   relative_humidity?: number;  // % (calculated from temp + dew point)
@@ -232,6 +233,88 @@ export const SYDNEY_ISD_STATIONS: ISDStation[] = [
 ];
 
 /**
+ * Japan ISD stations
+ * Covers major metropolitan areas including Tokyo, Hokkaido, and other regions
+ *
+ * Station data from NOAA ISD station history (isd-history.txt)
+ * Available at: https://www.ncei.noaa.gov/pub/data/noaa/isd-history.txt
+ */
+export const JAPAN_ISD_STATIONS: ISDStation[] = [
+  {
+    usaf: "476620",
+    wban: "99999",
+    name: "TOKYO",
+    country: "JA",
+    state: "",
+    icao: "RJTD",
+    latitude: 35.683,
+    longitude: 139.767,
+    elevation: 36,
+    begin: "1952-12-31",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "474070",
+    wban: "99999",
+    name: "ASAHIKAWA",
+    country: "JA",
+    state: "",
+    icao: "",
+    latitude: 43.750,
+    longitude: 142.367,
+    elevation: 140,
+    begin: "1952-12-31",
+    end: "2099-12-31"
+  }
+];
+
+/**
+ * Australian ISD stations
+ * Covers Queensland (Gold Coast, Brisbane) and other regions
+ */
+export const AUSTRALIA_ISD_STATIONS: ISDStation[] = [
+  {
+    usaf: "230010",
+    wban: "99999",
+    name: "GOLD COAST",
+    country: "AU",
+    state: "",
+    icao: "",
+    latitude: -27.960,
+    longitude: 153.430,
+    elevation: 2,
+    begin: "2007-02-01",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "250010",
+    wban: "99999",
+    name: "COOLANGATTA",
+    country: "AU",
+    state: "",
+    icao: "YBCF",
+    latitude: -28.217,
+    longitude: 153.540,
+    elevation: 5,
+    begin: "2007-01-02",
+    end: "2099-12-31"
+  },
+  {
+    usaf: "240030",
+    wban: "99999",
+    name: "BRISBANE",
+    country: "AU",
+    state: "",
+    icao: "",
+    latitude: -27.367,
+    longitude: 153.083,
+    elevation: 5,
+    begin: "2004-01-01",
+    end: "2099-12-31"
+  }
+];
+
+/**
  * Default station for Sydney Olympic Park area
  * Using Sydney Olympic Park AWS itself (0.43 km - essentially the same location)
  */
@@ -265,25 +348,57 @@ export function calculateDistance(
 }
 
 /**
- * Find nearest ISD station for Sydney area (99% use case)
- * Returns null if coordinates are too far from Sydney
+ * Find nearest ISD station for any supported region
+ * Checks all station registries with prioritization
+ * Returns null if coordinates are too far from any defined region
  */
 export function findNearestSydneyStation(
   latitude: number,
   longitude: number
 ): { station: ISDStation; distance: number } | null {
-  // Sydney Olympic Park coordinates (reference point)
+  // Check Australia stations first (closest match for Australian coordinates)
+  let nearestAus: { station: ISDStation; distance: number } | null = null;
+
+  for (const station of AUSTRALIA_ISD_STATIONS) {
+    const dist = calculateDistance(latitude, longitude, station.latitude, station.longitude);
+    if (!nearestAus || dist < nearestAus.distance) {
+      nearestAus = { station, distance: dist };
+    }
+  }
+
+  // If within 200km of an Australia station, use it
+  if (nearestAus && nearestAus.distance <= 200) {
+    console.log(`[ISD] Found Australia station: ${nearestAus.station.name} (${nearestAus.distance.toFixed(1)} km away)`);
+    return nearestAus;
+  }
+
+  // Check Japan stations
+  let nearestJapan: { station: ISDStation; distance: number } | null = null;
+
+  for (const station of JAPAN_ISD_STATIONS) {
+    const dist = calculateDistance(latitude, longitude, station.latitude, station.longitude);
+    if (!nearestJapan || dist < nearestJapan.distance) {
+      nearestJapan = { station, distance: dist };
+    }
+  }
+
+  // If within 200km of a Japan station, use it
+  if (nearestJapan && nearestJapan.distance <= 200) {
+    console.log(`[ISD] Found Japan station: ${nearestJapan.station.name} (${nearestJapan.distance.toFixed(1)} km away)`);
+    return nearestJapan;
+  }
+
+  // Check Sydney region (legacy)
   const SYDNEY_LAT = -33.8484;
   const SYDNEY_LON = 151.0648;
-
-  // If more than 100km from Sydney, return null (not Sydney area)
   const distFromSydney = calculateDistance(latitude, longitude, SYDNEY_LAT, SYDNEY_LON);
+
   if (distFromSydney > 100) {
     console.log(`[ISD] Location ${latitude},${longitude} is ${distFromSydney.toFixed(1)}km from Sydney, outside coverage area`);
     return null;
   }
 
-  // Find nearest station
+  // Find nearest Sydney station
   let nearest: { station: ISDStation; distance: number } | null = null;
 
   for (const station of SYDNEY_ISD_STATIONS) {
