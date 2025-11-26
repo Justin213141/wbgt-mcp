@@ -2277,8 +2277,7 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
 
 // Handler: GET /api/experimental/weatherzone_observations
 async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<string, string>, env: Env): Promise<Response> {
-  // Support both explicit site_id and location-based selection
-  const site_id = url.searchParams.get('site_id');
+  // Support location-based and default selection
   const latitude = url.searchParams.get('latitude') || url.searchParams.get('lat');
   const longitude = url.searchParams.get('longitude') || url.searchParams.get('lon');
   const observation_date = url.searchParams.get('observation_date') || url.searchParams.get('date');
@@ -2287,15 +2286,7 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
   let selectedStation: any;
   let stationSelectionInfo: any;
 
-  if (site_id) {
-    // Use explicit site_id (legacy behavior)
-    selectedStation = { siteId: site_id };
-    stationSelectionInfo = {
-      method: 'explicit',
-      site_id,
-      note: 'Using explicit site_id parameter'
-    };
-  } else if (latitude && longitude) {
+  if (latitude && longitude) {
     // Use location-based selection
     const lat = parseFloat(latitude);
     const lon = parseFloat(longitude);
@@ -2340,7 +2331,7 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
       );
     }
   } else {
-    // Use default station (no parameters provided)
+    // Use default station (no location parameters provided)
     const defaultStation = findNearestWeatherZoneStationOrDefault(-33.8541, 151.0743); // Sydney Olympic Park
     selectedStation = defaultStation;
     stationSelectionInfo = {
@@ -2358,15 +2349,13 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
       corsHeaders,
       {
         required: ['observation_date'],
-        optional: ['site_id OR latitude/longitude'],
+        optional: ['latitude/longitude for location-based selection'],
         format: {
           observation_date: 'Date in YYYY-MM-DD format (e.g., "2025-11-25")',
-          site_id: 'WeatherZone site ID (e.g., "66212" for Sydney Olympic Park)',
           latitude: 'Decimal degrees latitude (e.g., "-33.85")',
           longitude: 'Decimal degrees longitude (e.g., "151.21")'
         },
         examples: {
-          'Explicit site ID': 'site_id=66212&observation_date=2025-11-25',
           'Location-based': 'latitude=-33.85&longitude=151.21&observation_date=2025-11-25',
           'Default station': 'observation_date=2025-11-25'
         },
