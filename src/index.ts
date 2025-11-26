@@ -36,6 +36,12 @@ import { VisualCrossingFetcher } from './utils/visual-crossing-fetcher';
 import type { VisualCrossingObservation, HourlyWeatherArrays } from './utils/visual-crossing-fetcher';
 
 // --- Type Definitions ---
+interface Env {
+  BROWSER?: Fetcher;
+  VISUAL_CROSSING_API_KEY?: string;
+  MCP_OBJECT?: DurableObjectNamespace;
+}
+
 interface SRData {
   hourly?: {
     time?: string[];
@@ -103,6 +109,7 @@ const BOM_LOCATION_ID = "r3grwp";
 
 // Import unified fetcher to eliminate duplicate Kong WBGT functions
 import { HistoricalFetcher } from './utils/historical-fetcher';
+import { fetchWeatherZoneObservations } from './utils/weatherzone-fetcher';
 
 // Cache configuration
 const FORECAST_CACHE_KEY = 'wbgt:forecast';
@@ -1714,7 +1721,7 @@ async function combineVisualCrossingWithSolar(
 }
 
 // Handler: GET /api/observations (with 3-tier routing)
-async function handleGetObservations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
+async function handleGetObservations(url: URL, corsHeaders: Record<string, string>, env?: Env): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
@@ -1983,7 +1990,7 @@ async function combineMeteostatWithSolar(
 }
 
 // Handler: GET /api/VC_observations (Visual Crossing + OpenMeteo Solar)
-async function handleGetVC_Observations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
+async function handleGetVC_Observations(url: URL, corsHeaders: Record<string, string>, env?: Env): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
@@ -2099,7 +2106,7 @@ async function handleGetVC_Observations(url: URL, corsHeaders: Record<string, st
 }
 
 // Handler: GET /api/meteostat_observations (Meteostat + OpenMeteo Solar)
-async function handleGetMeteostatObservations(url: URL, corsHeaders: Record<string, string>, env?: any): Promise<Response> {
+async function handleGetMeteostatObservations(url: URL, corsHeaders: Record<string, string>, env?: Env): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
   const latitude = url.searchParams.get('latitude') ? parseFloat(url.searchParams.get('latitude')!) : undefined;
@@ -2268,6 +2275,89 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
   }
 }
 
+// Handler: GET /api/experimental/weatherzone_observations
+async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<string, string>, env: Env): Promise<Response> {
+  const site_id = url.searchParams.get('site_id');
+  const observation_date = url.searchParams.get('observation_date') || url.searchParams.get('date');
+
+  if (!site_id || !observation_date) {
+    return errorResponse(
+      'MISSING_REQUIRED_PARAMETERS',
+      'Missing required parameters: site_id and observation_date',
+      400,
+      corsHeaders,
+      {
+        required: ['site_id', 'observation_date'],
+        format: {
+          site_id: 'WeatherZone site ID (e.g., "66212" for Sydney Olympic Park)',
+          observation_date: 'Date in YYYY-MM-DD format (e.g., "2025-11-25")'
+        },
+        examples: {
+          'Sydney Olympic Park': 'site_id=66212&observation_date=2025-11-25'
+        },
+        note: 'EXPERIMENTAL: This endpoint attempts direct HTTP fetch of WeatherZone data. WeatherZone may require JavaScript rendering, in which case results will be limited.'
+      },
+      url.pathname
+    );
+  }
+
+  // Validate date format
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(observation_date)) {
+    return errorResponse(
+      'INVALID_DATE_FORMAT',
+      'observation_date must be in YYYY-MM-DD format',
+      400,
+      corsHeaders,
+      {
+        provided: observation_date,
+        expected: 'YYYY-MM-DD (e.g., 2025-11-25)'
+      },
+      url.pathname
+    );
+  }
+
+  try {
+    console.log(`[WEATHERZONE API] Fetching observations for site ${site_id} on ${observation_date}`);
+
+    // Fetch from WeatherZone with browser rendering
+    const result = await fetchWeatherZoneObservations(
+      site_id,
+      observation_date,
+      env?.BROWSER
+    );
+
+    return jsonResponse({
+      success: result.success,
+      data: result.observations,
+      count: result.observations.length,
+      source: result.source,
+      cached: result.cached || false,
+      site_id,
+      observation_date,
+      timestamp: new Date().toISOString(),
+      experimental: true,
+      note: result.success
+        ? 'EXPERIMENTAL: WeatherZone observations fetched successfully'
+        : `EXPERIMENTAL: ${result.error || 'Failed to fetch WeatherZone observations'}. This endpoint may require JavaScript rendering support (Cloudflare Browser Rendering API).`
+    }, result.success ? 200 : 500, corsHeaders);
+
+  } catch (error: any) {
+    return errorResponse(
+      'WEATHERZONE_FETCH_FAILED',
+      'Failed to fetch WeatherZone observations',
+      500,
+      corsHeaders,
+      {
+        reason: error?.message || 'Unknown error',
+        site_id,
+        observation_date,
+        experimental: true
+      },
+      url.pathname
+    );
+  }
+}
 
 // Handler: GET /health
 function handleHealth(corsHeaders: Record<string, string>): Response {
@@ -2479,6 +2569,7 @@ function handleApiRoot(corsHeaders: Record<string, string>): Response {
       'GET /api/VC_observations': 'Visual Crossing observations (1970-present) + OpenMeteo solar (observational weather data)',
       'GET /api/meteostat_observations': 'Meteostat observations (1943-present) + OpenMeteo solar (station-based weather data)',
       'GET /api/historic_observations': 'Historical WBGT data (Kong method) with timezone support (90+ days: NOAA ISD + OpenMeteo solar)',
+      'GET /api/experimental/weatherzone_observations': 'EXPERIMENTAL: WeatherZone hourly observations (requires site_id and observation_date)',
       'GET /api/health': 'Health check'
     },
     documentation: {
@@ -2525,7 +2616,7 @@ function addDeprecationHeader(corsHeaders: Record<string, string>, version: stri
   };
 }
 
-async function handleHTTPRequest(request: Request, env: any, _ctx: any): Promise<Response> {
+async function handleHTTPRequest(request: Request, env: Env, _ctx: any): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const corsHeaders = createCorsHeaders();
@@ -2543,6 +2634,7 @@ async function handleHTTPRequest(request: Request, env: any, _ctx: any): Promise
     if (pathname === '/api/VC_observations' && request.method === 'GET') return await handleGetVC_Observations(url, corsHeaders, env);
     if (pathname === '/api/meteostat_observations' && request.method === 'GET') return await handleGetMeteostatObservations(url, corsHeaders, env);
     if (pathname === '/api/historic_observations' && request.method === 'GET') return await handleGetHistoricObservations(url, corsHeaders);
+    if (pathname === '/api/experimental/weatherzone_observations' && request.method === 'GET') return await handleGetWeatherZoneObservations(url, corsHeaders, env);
     if (pathname === '/api/health' && request.method === 'GET') return handleHealth(corsHeaders);
     if (pathname === '/api' && request.method === 'GET') return handleApiRoot(corsHeaders);
 
