@@ -1370,7 +1370,7 @@ export class WBGTServerMCP extends McpAgent {
 
     this.server.tool(
       "get_observations",
-      "Get past 72 hours of WBGT observations using Kong method. Supports custom locations - automatically selects nearest BOM station within 50km or uses OpenMeteo. Can also calculate maximum WBGT during a specific activity time window",
+      "Get WBGT observations using 2-tier routing: WeatherZone (0-1 year) with BOM/Open-Meteo fallback, Historic endpoint (1+ years). Supports custom locations with automatic station selection. Can calculate maximum WBGT during specific time windows",
       observationsSchema,
       async (params: any) => {
         try {
@@ -1720,7 +1720,134 @@ async function combineVisualCrossingWithSolar(
   return results;
 }
 
-// Handler: GET /api/observations (with 3-tier routing)
+// Helper: Process WeatherZone observations with WBGT calculations
+async function processWeatherZoneObservationsWithWBGT(
+  weatherZoneObs: import('./utils/weatherzone-fetcher').WeatherZoneObservation[],
+  latitude: number,
+  longitude: number,
+  start_time?: string,
+  end_time?: string
+): Promise<any[]> {
+  const results: any[] = [];
+
+  console.log(`[WEATHERZONE-WBGT] Processing ${weatherZoneObs.length} WeatherZone observations`);
+
+  // Fetch solar radiation data from Open-Meteo for the date range
+  // Extract date range from observations
+  if (weatherZoneObs.length === 0) {
+    return results;
+  }
+
+  const times = weatherZoneObs.map(obs => new Date(obs.time));
+  const minDate = new Date(Math.min(...times.map(t => t.getTime())));
+  const maxDate = new Date(Math.max(...times.map(t => t.getTime())));
+
+  const startDateStr = minDate.toISOString().split('T')[0];
+  const endDateStr = maxDate.toISOString().split('T')[0];
+
+  // Fetch solar radiation from Open-Meteo
+  const { WeatherFetcherService } = await import('./services/weather/weather-fetcher.service');
+  const solarData = await WeatherFetcherService.fetchWeather({
+    latitude,
+    longitude,
+    startDate: startDateStr,
+    endDate: endDateStr,
+    timezone: 'auto',
+    useEnhancedSolarRadiation: true
+  });
+
+  // Build solar radiation time-indexed map
+  const solarMap: Record<string, { sr: number; direct: number; diffuse: number }> = {};
+  if (solarData?.hourly) {
+    const times = solarData.hourly.time || [];
+    const srInstant = solarData.hourly.shortwave_radiation_instant || [];
+    const srDirect = solarData.hourly.direct_radiation_instant || [];
+    const srDiffuse = solarData.hourly.diffuse_radiation_instant || [];
+
+    times.forEach((time: string, idx: number) => {
+      const hourKey = time.substring(0, 13); // "2025-11-26T14"
+      solarMap[hourKey] = {
+        sr: srInstant[idx] || 0,
+        direct: srDirect[idx] || 0,
+        diffuse: srDiffuse[idx] || 0
+      };
+    });
+  }
+
+  // Process each WeatherZone observation with Kong WBGT calculations
+  for (const obs of weatherZoneObs) {
+    const Ta = obs.temperature_c;
+    const RH = obs.humidity_pct ?? 50; // Default to 50% if missing
+    const u = obs.wind_speed_ms ?? 1.0; // Default to 1 m/s if missing
+    const Tdew = obs.dewpoint_c;
+
+    // Estimate pressure (use standard sea level if missing)
+    const P = 1013.25; // hPa - standard sea level pressure
+
+    // Get solar radiation for this timestamp
+    const obsTime = new Date(obs.time);
+    const hourKey = obsTime.toISOString().substring(0, 13);
+    const solar = solarMap[hourKey] || { sr: 0, direct: 0, diffuse: 0 };
+
+    // Calculate wet bulb using Stull approximation if dewpoint is available
+    let Tw: number;
+    if (Tdew !== undefined && Tdew !== null) {
+      // Use Stull (2011) approximation
+      // Tw = Ta * atan(0.151977 * (RH + 8.313659)^0.5) + atan(Ta + RH) - atan(RH - 1.676331) + 0.00391838 * RH^1.5 * atan(0.023101 * RH) - 4.686035
+      const rh_sqrt = Math.sqrt(RH + 8.313659);
+      Tw = Ta * Math.atan(0.151977 * rh_sqrt) + Math.atan(Ta + RH) - Math.atan(RH - 1.676331) +
+           0.00391838 * Math.pow(RH, 1.5) * Math.atan(0.023101 * RH) - 4.686035;
+    } else {
+      // Fallback: approximate from temperature and humidity
+      Tw = Ta * Math.atan(0.151977 * Math.sqrt(RH + 8.313659)) + Math.atan(Ta + RH) -
+           Math.atan(RH - 1.676331) + 0.00391838 * Math.pow(RH, 1.5) * Math.atan(0.023101 * RH) - 4.686035;
+    }
+
+    // Calculate Kong WBGT using the pipeline
+    const kongCalc = calculateKongWBGTPipelineByTimezone(
+      Ta, Tw, RH, P, u,
+      solar.sr, solar.direct, solar.diffuse,
+      latitude, longitude, obs.time,
+      10,   // UTC offset for Sydney (AEDT = UTC+11, AEST = UTC+10, using 10 as base)
+      true  // has DST
+    );
+
+    results.push({
+      timestamp: obs.time,
+      temperature: parseFloat(Ta.toFixed(1)),
+      humidity: Math.round(RH),
+      dew_point: Tdew !== undefined ? parseFloat(Tdew.toFixed(1)) : undefined,
+      wind_speed_ms: obs.wind_speed_ms !== undefined ? parseFloat(obs.wind_speed_ms.toFixed(2)) : undefined,
+      pressure_hpa: P,
+      solar_radiation: parseFloat(solar.sr.toFixed(1)),
+      solar_direct: parseFloat(solar.direct.toFixed(1)),
+      solar_diffuse: parseFloat(solar.diffuse.toFixed(1)),
+      wbgt: parseFloat(kongCalc.kong_wbgt.toFixed(1)),
+      esi: parseFloat(kongCalc.esi.toFixed(1)),
+      black_globe_temp: parseFloat(kongCalc.black_globe_temp.toFixed(1)),
+      natural_wet_bulb: parseFloat(kongCalc.natural_wet_bulb_temp.toFixed(1)),
+      solar_zenith_angle: parseFloat(kongCalc.solar_zenith_angle.toFixed(1)),
+      weather_source: 'WeatherZone',
+      solar_source: solar.sr > 0 ? 'Open-Meteo' : 'none'
+    });
+  }
+
+  // Filter to requested time window if provided
+  let filteredResults = results;
+  if (start_time && end_time) {
+    filteredResults = results.filter(obs => {
+      const obsTime = new Date(obs.timestamp);
+      const startTime = new Date(start_time);
+      const endTime = new Date(end_time);
+      return obsTime >= startTime && obsTime <= endTime;
+    });
+  }
+
+  console.log(`[WEATHERZONE-WBGT] Calculated WBGT for ${filteredResults.length} observations`);
+  return filteredResults;
+}
+
+// Handler: GET /api/observations (with 2-tier routing)
 async function handleGetObservations(url: URL, corsHeaders: Record<string, string>, env?: Env): Promise<Response> {
   const start_time = url.searchParams.get('start_time') || undefined;
   const end_time = url.searchParams.get('end_time') || undefined;
@@ -1731,8 +1858,9 @@ async function handleGetObservations(url: URL, corsHeaders: Record<string, strin
   const lat = latitude ?? SYDNEY_LAT;
   const lon = longitude ?? SYDNEY_LON;
 
-  // **3-TIER ROUTING LOGIC**
-  // Determine which data source to use based on data age
+  // **2-TIER ROUTING LOGIC**
+  // Tier 1 (0-365 days): WeatherZone (primary) with BOM/Open-Meteo fallback
+  // Tier 2 (365+ days): Redirect to /api/historic_observations (NOAA ISD)
   let dataSourceName: string;
   let observations: any[];
   let additionalInfo: any = {};
@@ -1745,106 +1873,142 @@ async function handleGetObservations(url: URL, corsHeaders: Record<string, strin
 
     console.log(`[OBSERVATIONS] Data age: ${ageInDays.toFixed(1)} days (start_time: ${start_time})`);
 
-    if (ageInDays <= 3) {
-      // **TIER 1: Recent data (0-3 days ago) - Use BOM + Open-Meteo**
-      console.log(`[OBSERVATIONS] TIER 1: Using BOM + Open-Meteo for recent data`);
-      dataSourceName = 'BOM + Open-Meteo';
-
-      // Determine BOM station based on location
-      let dataSource: { station: any; source: string; distance?: number } | null = null;
-      let bomUrl: string | null = null;
-
-      if (latitude !== undefined && longitude !== undefined) {
-        dataSource = determineDataSource(latitude, longitude);
-        bomUrl = dataSource.station?.jsonUrl ?? null;
-      } else {
-        bomUrl = DEFAULT_BOM_STATION.jsonUrl;
-        dataSource = {
-          station: DEFAULT_BOM_STATION,
-          source: DEFAULT_BOM_STATION.name,
-          distance: undefined
-        };
-      }
-
-      const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
-      observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time, end_time);
-
-      additionalInfo = {
-        station: dataSource?.source ?? DEFAULT_BOM_STATION.name,
-        distance_km: dataSource?.distance
-      };
-
-    } else if (ageInDays <= 90) {
-      // **TIER 2: Medium-term data (3-90 days ago) - Use Open-Meteo Only**
-      console.log(`[OBSERVATIONS] TIER 2: Using Open-Meteo only for ${ageInDays.toFixed(1)} day old data`);
-
-      dataSourceName = 'Open-Meteo Only';
+    if (ageInDays <= 365) {
+      // **TIER 1: Recent data (0-365 days ago) - Use WeatherZone (most accurate hourly data)**
+      console.log(`[OBSERVATIONS] TIER 1: Using WeatherZone for data within past year`);
+      dataSourceName = 'WeatherZone';
 
       try {
-        // Extract date range from start_time and end_time
-        const startDateStr = start_time.split('T')[0];  // "YYYY-MM-DD"
-        const endDateStr = end_time ? end_time.split('T')[0] : new Date().toISOString().split('T')[0];
+        // Determine WeatherZone station based on location
+        let selectedStation: any;
+        let stationSelectionInfo: any;
 
-        // Use enhanced weather fetcher to get Open-Meteo data with solar radiation
-        const { WeatherFetcherService } = await import('./services/weather/weather-fetcher.service');
-        const weatherData = await WeatherFetcherService.fetchWeather({
-          latitude: lat,
-          longitude: lon,
-          startDate: startDateStr,
-          endDate: endDateStr,
-          timezone: 'auto',
-          useEnhancedSolarRadiation: true
-        });
-
-        // Parse weather data with Kong WBGT calculations (similar to parseHistoricalObservations)
-        observations = await parseHistoricalObservationsWithSolar(weatherData, lat, lon);
-
-        // Filter to requested time window if both start_time and end_time provided
-        if (start_time && end_time) {
-          const filtered = getMaxInRange(observations, start_time, end_time);
-          observations = filtered ? [filtered] : [];
-
-          // Try interpolation fallback if no exact match
-          if (!filtered) {
-            const interpolated = getInterpolatedMaxInRange(observations, start_time, end_time);
-            observations = interpolated ? [interpolated] : [];
+        if (latitude !== undefined && longitude !== undefined) {
+          const stationResult = determineWeatherZoneDataSource(latitude, longitude);
+          if (stationResult.station) {
+            selectedStation = stationResult.station;
+            stationSelectionInfo = {
+              method: 'location_based',
+              coordinates: { latitude, longitude },
+              station: stationResult.station,
+              distance: stationResult.distance,
+              source: stationResult.source
+            };
+          } else {
+            // Fallback to default station if no nearby station found
+            selectedStation = findNearestWeatherZoneStationOrDefault(lat, lon);
+            stationSelectionInfo = {
+              method: 'default_fallback',
+              coordinates: { latitude, longitude },
+              station: selectedStation,
+              note: 'No station found within 50km, using default'
+            };
           }
+        } else {
+          // Use default station
+          selectedStation = findNearestWeatherZoneStationOrDefault(SYDNEY_LAT, SYDNEY_LON);
+          stationSelectionInfo = {
+            method: 'default',
+            station: selectedStation
+          };
         }
 
-        additionalInfo = {
-          location: { latitude: lat, longitude: lon },
-          date_range: { start: startDateStr, end: endDateStr },
-          solar_radiation_source: weatherData.solarRadiationSource || 'standard'
-        };
+        // Extract date from start_time for WeatherZone observation_date
+        const observationDate = start_time.split('T')[0];
 
-      } catch (error: any) {
-        return errorResponse(
-          'OPENMETEO_FETCH_FAILED',
-          'Failed to fetch Open-Meteo data for tier 2',
-          500,
-          corsHeaders,
-          {
-            reason: error?.message || 'Unknown error',
-            data_age_days: ageInDays.toFixed(1),
-            tier: 'tier_2',
-            location: { latitude: lat, longitude: lon }
-          },
-          url.pathname
+        // Fetch WeatherZone observations with browser rendering
+        const weatherZoneResult = await fetchWeatherZoneObservations(
+          selectedStation.siteId,
+          observationDate,
+          env?.BROWSER
         );
+
+        if (!weatherZoneResult.success || weatherZoneResult.observations.length === 0) {
+          // Fallback to Tier 2 (BOM + Open-Meteo) if WeatherZone fails
+          console.log(`[OBSERVATIONS] WeatherZone fetch failed, falling back to Tier 2 (BOM + Open-Meteo)`);
+          dataSourceName = 'BOM + Open-Meteo (WeatherZone fallback)';
+
+          let dataSource: { station: any; source: string; distance?: number } | null = null;
+          let bomUrl: string | null = null;
+
+          if (latitude !== undefined && longitude !== undefined) {
+            dataSource = determineDataSource(latitude, longitude);
+            bomUrl = dataSource.station?.jsonUrl ?? null;
+          } else {
+            bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+            dataSource = {
+              station: DEFAULT_BOM_STATION,
+              source: DEFAULT_BOM_STATION.name,
+              distance: undefined
+            };
+          }
+
+          const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
+          observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time, end_time);
+
+          additionalInfo = {
+            station: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+            distance_km: dataSource?.distance,
+            weatherzone_fallback_reason: weatherZoneResult.error || 'No observations found'
+          };
+        } else {
+          // Successfully fetched WeatherZone data - now calculate WBGT
+          observations = await processWeatherZoneObservationsWithWBGT(
+            weatherZoneResult.observations,
+            lat,
+            lon,
+            start_time,
+            end_time
+          );
+
+          additionalInfo = {
+            station_selection: stationSelectionInfo,
+            weatherzone_site_id: selectedStation.siteId,
+            observation_date: observationDate
+          };
+        }
+      } catch (error: any) {
+        // Fallback to BOM + Open-Meteo on error
+        console.error(`[OBSERVATIONS] WeatherZone error, falling back to BOM + Open-Meteo:`, error);
+        dataSourceName = 'BOM + Open-Meteo (WeatherZone error fallback)';
+
+        let dataSource: { station: any; source: string; distance?: number } | null = null;
+        let bomUrl: string | null = null;
+
+        if (latitude !== undefined && longitude !== undefined) {
+          dataSource = determineDataSource(latitude, longitude);
+          bomUrl = dataSource.station?.jsonUrl ?? null;
+        } else {
+          bomUrl = DEFAULT_BOM_STATION.jsonUrl;
+          dataSource = {
+            station: DEFAULT_BOM_STATION,
+            source: DEFAULT_BOM_STATION.name,
+            distance: undefined
+          };
+        }
+
+        const data = await fetchObservations(undefined, undefined, latitude, longitude, bomUrl);
+        observations = parseObservationsKong(data.srData!, data.bomData ?? null, start_time, end_time);
+
+        additionalInfo = {
+          station: dataSource?.source ?? DEFAULT_BOM_STATION.name,
+          distance_km: dataSource?.distance,
+          weatherzone_error: error?.message || 'Unknown error'
+        };
       }
 
     } else {
-      // **TIER 3: Long-term historical data (90+ days ago) - Redirect to /historic_observations**
-      console.log(`[OBSERVATIONS] TIER 3: Data too old (${ageInDays.toFixed(1)} days), redirecting to /historic_observations`);
+      // **TIER 2: Historical data (1+ years ago) - Redirect to /historic_observations**
+      console.log(`[OBSERVATIONS] TIER 2: Data too old (${ageInDays.toFixed(1)} days), redirecting to /historic_observations`);
 
       return errorResponse(
         'USE_HISTORIC_ENDPOINT',
-        'For data older than 90 days, use /api/historic_observations endpoint',
+        'For data older than 1 year (365 days), use /api/historic_observations endpoint',
         400,
         corsHeaders,
         {
           data_age_days: ageInDays.toFixed(1),
-          tier: 'tier_3',
+          tier: 'tier_2',
           requested_date: start_time,
           recommendation: {
             endpoint: '/api/historic_observations',
@@ -2466,9 +2630,13 @@ paths:
           description: WBGT forecast retrieved successfully
   /api/v1/observations:
     get:
-      summary: Get past 72 hours of WBGT observations
+      summary: Get WBGT observations with 2-tier routing (WeatherZone primary, Historic for 1y+)
       tags:
         - Historical Data
+      description: |
+        2-tier routing based on data age:
+        - Tier 1 (0-365 days): WeatherZone hourly observations (primary), with BOM/Open-Meteo fallback
+        - Tier 2 (1+ years): Redirects to /api/historic_observations (NOAA ISD)
       parameters:
         - name: start_time
           in: query
@@ -2632,11 +2800,11 @@ function handleApiRoot(corsHeaders: Record<string, string>): Response {
     endpoints: {
       'GET /api/current': 'Current WBGT conditions in Sydney (< 3 days: BOM + OpenMeteo)',
       'GET /api/forecast': '72-hour WBGT forecast for Sydney',
-      'GET /api/observations': '3-tier observations: BOM for <3d, OpenMeteo for 3d-90d, redirects to historic for >90d',
+      'GET /api/observations': '2-tier observations: WeatherZone (0-1y) with BOM/OpenMeteo fallback, Historic endpoint (1y+)',
       'GET /api/VC_observations': 'Visual Crossing observations (1970-present) + OpenMeteo solar (observational weather data)',
       'GET /api/meteostat_observations': 'Meteostat observations (1943-present) + OpenMeteo solar (station-based weather data)',
       'GET /api/historic_observations': 'Historical WBGT data (Kong method) with timezone support (90+ days: NOAA ISD + OpenMeteo solar)',
-      'GET /api/experimental/weatherzone_observations': 'EXPERIMENTAL: WeatherZone hourly observations (requires site_id and observation_date)',
+      'GET /api/experimental/weatherzone_observations': 'DEPRECATED: WeatherZone now integrated into /api/observations (Tier 1 for 0-1 year data)',
       'GET /api/health': 'Health check'
     },
     documentation: {
@@ -2722,7 +2890,7 @@ async function handleHTTPRequest(request: Request, env: Env, _ctx: any): Promise
         paths: {
           '/api/current': { get: { summary: 'Get current WBGT conditions', tags: ['Current Conditions'] } },
           '/api/forecast': { get: { summary: 'Get 72-hour WBGT forecast', tags: ['Forecast'] } },
-          '/api/observations': { get: { summary: 'Get past 72 hours of WBGT observations', tags: ['Historical Data'] } },
+          '/api/observations': { get: { summary: 'Get WBGT observations with 2-tier routing (WeatherZone 0-1y, Historic 1y+)', tags: ['Historical Data'] } },
           '/api/historic_observations': { get: { summary: 'Get historical WBGT observations with timezone support', tags: ['Historical Data'] } }
         }
       }, null, 2), {
