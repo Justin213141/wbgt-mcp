@@ -192,14 +192,6 @@ export const SYDNEY_BOM_STATIONS: BOMStation[] = [
     jsonUrl: "http://www.bom.gov.au/fwo/IDN60901/IDN60901.95768.json"
   },
   {
-    name: "Parramatta North (Masons Drive)",
-    code: "94764",
-    productId: "IDN60901",
-    latitude: -33.79,
-    longitude: 151.02,
-    jsonUrl: "http://www.bom.gov.au/fwo/IDN60901/IDN60901.94764.json"
-  },
-  {
     name: "Penrith Lakes AWS",
     code: "94763",
     productId: "IDN60901",

@@ -198,7 +198,7 @@ describe('Station Finder Utility', () => {
       const uniqueCodes = new Set(codes);
 
       expect(uniqueCodes.size).toBe(codes.length);
-      expect(codes.length).toBe(32); // 31 Sydney + 1 South Coast
+      expect(codes.length).toBe(31); // 30 Sydney + 1 South Coast
     });
 
     it('should have valid JSON URLs for all stations', () => {

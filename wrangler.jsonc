@@ -32,6 +32,14 @@
 	},
 	"observability": {
 		"enabled": true
+	},
+	/**
+	 * Browser Rendering
+	 * Free tier: 10 minutes/day, 3 concurrent browsers
+	 * Docs: https://developers.cloudflare.com/browser-rendering/
+	 */
+	"browser": {
+		"binding": "BROWSER"
 	}
 	/**
 	 * Smart Placement
