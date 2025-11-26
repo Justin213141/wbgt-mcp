@@ -3,7 +3,7 @@
  * Comprehensive Kong heat stress index implementation
  */
 
-import { STEFAN_BOLTZMANN, GLOBE_EMISSIVITY, WICK_EMISSIVITY } from '../constants';
+import { STEFAN_BOLTZMANN, GLOBE_EMISSIVITY, WICK_EMISSIVITY } from '../constants/physical.constants';
 import {
   calculateSolarZenithAngle,
   calculateSolarZenithAngleJST,
@@ -76,7 +76,25 @@ export function calculateKongNaturalWetBulb(
   if (denominator === 0) return Ta;
 
   const T_nw_K = Ta_K + numerator / denominator;
-  return T_nw_K - 273.15;
+  const T_nw = T_nw_K - 273.15;
+
+  // Physical constraint validation: natural wet bulb cannot exceed air temperature
+  // Allow small margin for measurement and calculation errors
+  const PHYSICAL_CONSTRAINT_MARGIN = 2.0; // °C
+
+  if (T_nw > Ta + PHYSICAL_CONSTRAINT_MARGIN) {
+    console.warn(`Physical constraint violation: Natural wet bulb temperature (${T_nw.toFixed(1)}°C) exceeds air temperature (${Ta.toFixed(1)}°C) by more than ${PHYSICAL_CONSTRAINT_MARGIN}°C. Clamping to air temperature.`);
+    return Ta;
+  }
+
+  // Additional sanity check: wet bulb shouldn't be unreasonably low
+  const MIN_REASONABLE_WET_BULB = Ta - 30; // Maximum 30°C below air temperature
+  if (T_nw < MIN_REASONABLE_WET_BULB) {
+    console.warn(`Natural wet bulb temperature (${T_nw.toFixed(1)}°C) unreasonably low for air temperature (${Ta.toFixed(1)}°C). Clamping to minimum reasonable value.`);
+    return MIN_REASONABLE_WET_BULB;
+  }
+
+  return T_nw;
 }
 
 /**

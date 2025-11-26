@@ -90,6 +90,74 @@ export function validateTemperature(temperature: any): WeatherParameterValidatio
 }
 
 /**
+ * Validate calculated temperature with physical constraints
+ * @param temperature Calculated temperature in Celsius
+ * @param referenceTemp Reference temperature for physical validation (e.g., air temp for wet bulb)
+ * @param constraintType Type of physical constraint to apply
+ * @returns Validation result
+ */
+export function validateCalculatedTemperature(
+  temperature: any,
+  referenceTemp?: number,
+  constraintType: 'wet_bulb' | 'black_globe' | 'general' = 'general'
+): WeatherParameterValidationResult {
+  // Basic temperature validation first
+  const basicValidation = validateTemperature(temperature);
+  if (!basicValidation.valid) {
+    return basicValidation;
+  }
+  temperature = basicValidation.value!;
+
+  // Apply physical constraints based on calculation type
+  if (referenceTemp !== undefined) {
+    const PHYSICAL_MARGIN = 2.0; // °C margin for measurement/calculation errors
+
+    switch (constraintType) {
+      case 'wet_bulb':
+        // Natural wet bulb cannot exceed air temperature
+        if (temperature > referenceTemp + PHYSICAL_MARGIN) {
+          return {
+            valid: false,
+            error: `Calculated wet bulb temperature (${temperature.toFixed(1)}°C) cannot exceed air temperature (${referenceTemp.toFixed(1)}°C) by more than ${PHYSICAL_MARGIN}°C`,
+          };
+        }
+        // Wet bulb shouldn't be unreasonably low
+        if (temperature < referenceTemp - 30) {
+          return {
+            valid: false,
+            error: `Calculated wet bulb temperature (${temperature.toFixed(1)}°C) unreasonably low for air temperature (${referenceTemp.toFixed(1)}°C)`,
+          };
+        }
+        break;
+
+      case 'black_globe':
+        // Black globe can exceed air temperature due to solar heating, but within reasonable limits
+        const maxGlobeHeating = 30; // Maximum 30°C above air temperature
+        if (temperature > referenceTemp + maxGlobeHeating) {
+          return {
+            valid: false,
+            error: `Calculated black globe temperature (${temperature.toFixed(1)}°C) cannot exceed air temperature (${referenceTemp.toFixed(1)}°C) by more than ${maxGlobeHeating}°C`,
+          };
+        }
+        break;
+
+      case 'general':
+        // General sanity check for extreme deviations
+        const maxDeviation = 50; // Maximum 50°C deviation from reference
+        if (Math.abs(temperature - referenceTemp) > maxDeviation) {
+          return {
+            valid: false,
+            error: `Calculated temperature (${temperature.toFixed(1)}°C) deviates excessively from reference temperature (${referenceTemp.toFixed(1)}°C)`,
+          };
+        }
+        break;
+    }
+  }
+
+  return { valid: true, value: temperature };
+}
+
+/**
  * Validate relative humidity (%)
  * @param humidity Relative humidity (0-100)
  * @returns Validation result
