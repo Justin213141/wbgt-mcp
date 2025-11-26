@@ -3,6 +3,12 @@
  *
  * Fetches historical weather observations from WeatherZone using Cloudflare Browser Rendering.
  * Uses Puppeteer to render JavaScript and extract observation data.
+ *
+ * IMPORTANT NOTE: WeatherZone API quirk with wind units
+ * - The wind field in WeatherZone HTML is labeled as 'wind_kmh'
+ * - However, the actual values are already in m/s (meters per second)
+ * - NO CONVERSION IS NEEDED - values are used as-is
+ * - This applies to all wind speed data extracted from WeatherZone
  */
 
 import puppeteer from '@cloudflare/puppeteer';
@@ -12,7 +18,7 @@ export interface WeatherZoneObservation {
   temperature_c: number;
   humidity_pct?: number;
   dewpoint_c?: number;
-  wind_speed_ms?: number;
+  wind_speed_ms?: number; // NOTE: WeatherZone labels this as 'wind_kmh' but values are already in m/s
 }
 
 export interface WeatherZoneFetchResult {
@@ -102,6 +108,7 @@ export async function fetchWeatherZoneObservations(
                            tempCell.textContent?.trim() || '';
             const humidityText = humidityCell?.querySelector('p')?.textContent?.trim() ||
                                humidityCell?.textContent?.trim() || '';
+            // NOTE: WeatherZone labels wind field as 'wind_kmh' but values are already in m/s - no conversion needed
             const windText = windCell?.querySelector('p')?.textContent?.trim() ||
                            windCell?.textContent?.trim() || '';
             const dewPointText = dewPointCell?.querySelector('p')?.textContent?.trim() ||
@@ -110,7 +117,7 @@ export async function fetchWeatherZoneObservations(
             // Parse numeric values
             const temp = parseFloat(tempText);
             const humidity = parseFloat(humidityText);
-            const windSpeed = parseFloat(windText);
+            const windSpeed = parseFloat(windText); // Already in m/s despite 'wind_kmh' label
             const dewPoint = parseFloat(dewPointText);
 
             if (!isNaN(temp) && dateText) {
