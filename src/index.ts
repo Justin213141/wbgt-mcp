@@ -28,7 +28,7 @@ import {
 } from './calculations';
 
 // Import station finder utilities
-import { determineDataSource } from './utils/station-finder';
+import { determineDataSource, determineWeatherZoneDataSource, findNearestWeatherZoneStationOrDefault } from './utils/station-finder';
 import { DEFAULT_BOM_STATION } from './data/bom-stations';
 
 // Import Visual Crossing fetcher for 3-90 day observational data
@@ -2277,23 +2277,98 @@ async function handleGetHistoricObservations(url: URL, corsHeaders: Record<strin
 
 // Handler: GET /api/experimental/weatherzone_observations
 async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<string, string>, env: Env): Promise<Response> {
+  // Support both explicit site_id and location-based selection
   const site_id = url.searchParams.get('site_id');
+  const latitude = url.searchParams.get('latitude') || url.searchParams.get('lat');
+  const longitude = url.searchParams.get('longitude') || url.searchParams.get('lon');
   const observation_date = url.searchParams.get('observation_date') || url.searchParams.get('date');
 
-  if (!site_id || !observation_date) {
+  // Determine the station to use
+  let selectedStation: any;
+  let stationSelectionInfo: any;
+
+  if (site_id) {
+    // Use explicit site_id (legacy behavior)
+    selectedStation = { siteId: site_id };
+    stationSelectionInfo = {
+      method: 'explicit',
+      site_id,
+      note: 'Using explicit site_id parameter'
+    };
+  } else if (latitude && longitude) {
+    // Use location-based selection
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
+
+    if (isNaN(lat) || isNaN(lon)) {
+      return errorResponse(
+        'INVALID_COORDINATES',
+        'Invalid latitude or longitude values',
+        400,
+        corsHeaders,
+        {
+          provided: { latitude, longitude },
+          expected: 'Valid decimal coordinates (e.g., latitude=-33.85&longitude=151.21)'
+        },
+        url.pathname
+      );
+    }
+
+    const stationResult = determineWeatherZoneDataSource(lat, lon);
+    if (stationResult.station) {
+      selectedStation = stationResult.station;
+      stationSelectionInfo = {
+        method: 'location_based',
+        coordinates: { latitude: lat, longitude: lon },
+        station: stationResult.station,
+        distance: stationResult.distance,
+        source: stationResult.source
+      };
+    } else {
+      return errorResponse(
+        'NO_STATION_FOUND',
+        'No WeatherZone station found within 50km of provided coordinates',
+        404,
+        corsHeaders,
+        {
+          coordinates: { latitude: lat, longitude: lon },
+          max_distance: '50km',
+          available_stations: 'Sydney Olympic Park (66212) - default location',
+          suggestion: 'Try coordinates near Sydney Olympic Park or omit coordinates to use default station'
+        },
+        url.pathname
+      );
+    }
+  } else {
+    // Use default station (no parameters provided)
+    const defaultStation = findNearestWeatherZoneStationOrDefault(-33.8541, 151.0743); // Sydney Olympic Park
+    selectedStation = defaultStation;
+    stationSelectionInfo = {
+      method: 'default',
+      station: defaultStation,
+      note: 'Using default WeatherZone station (Sydney Olympic Park)'
+    };
+  }
+
+  if (!observation_date) {
     return errorResponse(
       'MISSING_REQUIRED_PARAMETERS',
-      'Missing required parameters: site_id and observation_date',
+      'Missing required parameter: observation_date',
       400,
       corsHeaders,
       {
-        required: ['site_id', 'observation_date'],
+        required: ['observation_date'],
+        optional: ['site_id OR latitude/longitude'],
         format: {
+          observation_date: 'Date in YYYY-MM-DD format (e.g., "2025-11-25")',
           site_id: 'WeatherZone site ID (e.g., "66212" for Sydney Olympic Park)',
-          observation_date: 'Date in YYYY-MM-DD format (e.g., "2025-11-25")'
+          latitude: 'Decimal degrees latitude (e.g., "-33.85")',
+          longitude: 'Decimal degrees longitude (e.g., "151.21")'
         },
         examples: {
-          'Sydney Olympic Park': 'site_id=66212&observation_date=2025-11-25'
+          'Explicit site ID': 'site_id=66212&observation_date=2025-11-25',
+          'Location-based': 'latitude=-33.85&longitude=151.21&observation_date=2025-11-25',
+          'Default station': 'observation_date=2025-11-25'
         },
         note: 'EXPERIMENTAL: This endpoint attempts direct HTTP fetch of WeatherZone data. WeatherZone may require JavaScript rendering, in which case results will be limited.'
       },
@@ -2318,11 +2393,12 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
   }
 
   try {
-    console.log(`[WEATHERZONE API] Fetching observations for site ${site_id} on ${observation_date}`);
+    const usedSiteId = selectedStation.siteId;
+    console.log(`[WEATHERZONE API] Fetching observations for site ${usedSiteId} on ${observation_date} (${stationSelectionInfo.method})`);
 
     // Fetch from WeatherZone with browser rendering
     const result = await fetchWeatherZoneObservations(
-      site_id,
+      usedSiteId,
       observation_date,
       env?.BROWSER
     );
@@ -2333,10 +2409,11 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
       count: result.observations.length,
       source: result.source,
       cached: result.cached || false,
-      site_id,
+      site_id: usedSiteId,
       observation_date,
       timestamp: new Date().toISOString(),
       experimental: true,
+      station_selection: stationSelectionInfo,
       note: result.success
         ? 'EXPERIMENTAL: WeatherZone observations fetched successfully'
         : `EXPERIMENTAL: ${result.error || 'Failed to fetch WeatherZone observations'}. This endpoint may require JavaScript rendering support (Cloudflare Browser Rendering API).`
@@ -2350,8 +2427,9 @@ async function handleGetWeatherZoneObservations(url: URL, corsHeaders: Record<st
       corsHeaders,
       {
         reason: error?.message || 'Unknown error',
-        site_id,
+        site_id: selectedStation.siteId,
         observation_date,
+        station_selection: stationSelectionInfo,
         experimental: true
       },
       url.pathname

@@ -7,6 +7,8 @@
 
 import type { BOMStation } from '../data/bom-stations';
 import { ALL_BOM_STATIONS, DEFAULT_BOM_STATION } from '../data/bom-stations';
+import type { WeatherZoneStation } from '../data/weatherzone-stations';
+import { ALL_WEATHERZONE_STATIONS, DEFAULT_WEATHERZONE_STATION } from '../data/weatherzone-stations';
 
 /**
  * Maximum distance (in kilometers) to search for a BOM station.
@@ -104,6 +106,95 @@ export function findNearestStationOrDefault(
 ): BOMStation {
   const result = findNearestStation(latitude, longitude);
   return result ? result.station : DEFAULT_BOM_STATION;
+}
+
+/**
+ * Find the nearest WeatherZone station to a given location.
+ *
+ * @param latitude Target latitude
+ * @param longitude Target longitude
+ * @param maxDistanceKm Maximum search radius (default: 50km)
+ * @returns Nearest station if within radius, or null if none found
+ */
+export function findNearestWeatherZoneStation(
+  latitude: number,
+  longitude: number,
+  maxDistanceKm: number = MAX_STATION_DISTANCE_KM
+): { station: WeatherZoneStation; distance: number } | null {
+  let nearestStation: WeatherZoneStation | null = null;
+  let minDistance = Number.POSITIVE_INFINITY;
+
+  for (const station of ALL_WEATHERZONE_STATIONS) {
+    const distance = calculateHaversineDistance(
+      latitude,
+      longitude,
+      station.latitude,
+      station.longitude
+    );
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestStation = station;
+    }
+  }
+
+  // Return null if no station found within the maximum distance
+  if (nearestStation === null || minDistance > maxDistanceKm) {
+    return null;
+  }
+
+  return {
+    station: nearestStation,
+    distance: minDistance
+  };
+}
+
+/**
+ * Find the nearest WeatherZone station, with fallback to default.
+ *
+ * @param latitude Target latitude
+ * @param longitude Target longitude
+ * @returns Nearest station within 50km, or default station if none found
+ */
+export function findNearestWeatherZoneStationOrDefault(
+  latitude: number,
+  longitude: number
+): WeatherZoneStation {
+  const result = findNearestWeatherZoneStation(latitude, longitude);
+  return result ? result.station : DEFAULT_WEATHERZONE_STATION;
+}
+
+/**
+ * Determine the WeatherZone data source based on location.
+ *
+ * @param latitude Target latitude
+ * @param longitude Target longitude
+ * @returns Object with station (if applicable) and source type
+ */
+export function determineWeatherZoneDataSource(
+  latitude: number,
+  longitude: number
+): {
+  station: WeatherZoneStation | null;
+  source: string;
+  distance?: number;
+} {
+  const result = findNearestWeatherZoneStation(latitude, longitude);
+
+  if (result) {
+    return {
+      station: result.station,
+      source: `WeatherZone ${result.station.name}`,
+      distance: result.distance
+    };
+  }
+
+  // No WeatherZone station within range, return null
+  return {
+    station: null,
+    source: 'No WeatherZone station within range',
+    distance: undefined
+  };
 }
 
 /**
