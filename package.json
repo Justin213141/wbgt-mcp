@@ -13,6 +13,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.4",
     "@modelcontextprotocol/sdk": "1.19.1",
     "agents": "^0.2.8",
     "zod": "^3.25.76"
