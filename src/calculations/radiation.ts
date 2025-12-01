@@ -60,7 +60,9 @@ export function calculateRadiationComponents(
   // Normal case: sun is above horizon
   // Shortwave on globe (0.5 sphere, receiving from sky and ground)
   const cosTheta = Math.cos(theta_rad);
-  const denom = Math.max(0.1, cosTheta);
+  // Floor at cos(60°) = 0.5 to prevent formula divergence at low sun angles
+  // At zenith > 60°, the direct beam geometry factor is capped
+  const denom = Math.max(0.5, cosTheta);
 
   const SRg = 0.5 * (1 - GLOBE_ALBEDO) * [
     (1 - fdir) * SRdown,

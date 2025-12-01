@@ -3,7 +3,7 @@
  * Integrates the tiered solar radiation system with existing weather data fetching
  */
 
-import type { WeatherData } from '../../types/weather-data.types';
+import type { WeatherData, SolarRadiationSource } from '../../types/weather-data.types';
 import { SolarRadiationService, type SolarRadiationOptions, type SolarRadiationResult } from './solar-radiation.service';
 
 export interface WeatherFetchOptions {
@@ -16,27 +16,27 @@ export interface WeatherFetchOptions {
 }
 
 export interface EnhancedWeatherData extends WeatherData {
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-    relative_humidity_2m: number[];
-    dew_point_2m: number[];
-    surface_pressure: number[];
-    wind_speed_10m: number[];
-    shortwave_radiation_instant: number[];
-    direct_radiation_instant: number[];
-    diffuse_radiation_instant: number[];
-    apparent_temperature: number[];
-    cloud_cover: number[];
-  };
-  solarRadiationSource?: 'satellite' | 'archive' | 'standard';
+  solarRadiationSource?: SolarRadiationSource;
 }
 
 /**
  * Enhanced Weather Fetcher with tiered solar radiation support
  */
 export class WeatherFetcherService {
-  private static readonly STANDARD_API_BASE = 'https://archive-api.open-meteo.com/v1/archive';
+  private static readonly ARCHIVE_API_BASE = 'https://archive-api.open-meteo.com/v1/archive';
+  private static readonly FORECAST_API_BASE = 'https://api.open-meteo.com/v1/forecast';
+
+  /**
+   * Check if a date is recent (within past 5 days) - archive API doesn't have recent data
+   */
+  private static isRecentDate(date: string): boolean {
+    const targetDate = new Date(date);
+    const now = new Date();
+    const fiveDaysAgo = new Date(now);
+    fiveDaysAgo.setDate(now.getDate() - 5);
+    // Recent = within past 5 days or in the future
+    return targetDate >= fiveDaysAgo;
+  }
 
   /**
    * Fetch weather data with optional enhanced solar radiation
@@ -76,7 +76,8 @@ export class WeatherFetcherService {
   }
 
   /**
-   * Fetch standard weather data from Open-Meteo Archive API
+   * Fetch standard weather data from Open-Meteo API
+   * Uses forecast API for recent dates, archive API for historical dates
    */
   private static async fetchStandardWeather(options: {
     latitude: number;
@@ -87,15 +88,33 @@ export class WeatherFetcherService {
   }): Promise<WeatherData> {
     const { latitude, longitude, startDate, endDate, timezone } = options;
 
-    const url = new URL(this.STANDARD_API_BASE);
-    url.searchParams.set('latitude', latitude.toString());
-    url.searchParams.set('longitude', longitude.toString());
-    url.searchParams.set('start_date', startDate);
-    url.searchParams.set('end_date', endDate);
-    url.searchParams.set('hourly', 'temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,cloud_cover');
-    url.searchParams.set('timezone', timezone);
+    // Check if this is a recent date (archive API doesn't have recent data)
+    const isRecent = this.isRecentDate(startDate) || this.isRecentDate(endDate);
 
-    console.log(`[WeatherFetcher] Fetching standard weather data: ${url.toString()}`);
+    const hourlyParams = 'temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,apparent_temperature,cloud_cover';
+
+    let url: URL;
+    if (isRecent) {
+      // Use forecast API with past_days for recent dates
+      url = new URL(this.FORECAST_API_BASE);
+      url.searchParams.set('latitude', latitude.toString());
+      url.searchParams.set('longitude', longitude.toString());
+      url.searchParams.set('hourly', hourlyParams);
+      url.searchParams.set('timezone', timezone);
+      url.searchParams.set('past_days', '5');
+      url.searchParams.set('forecast_days', '1');
+      console.log(`[WeatherFetcher] Fetching recent weather data (forecast API): ${url.toString()}`);
+    } else {
+      // Use archive API for historical dates
+      url = new URL(this.ARCHIVE_API_BASE);
+      url.searchParams.set('latitude', latitude.toString());
+      url.searchParams.set('longitude', longitude.toString());
+      url.searchParams.set('start_date', startDate);
+      url.searchParams.set('end_date', endDate);
+      url.searchParams.set('hourly', hourlyParams);
+      url.searchParams.set('timezone', timezone);
+      console.log(`[WeatherFetcher] Fetching historical weather data (archive API): ${url.toString()}`);
+    }
 
     const response = await fetch(url.toString());
     if (!response.ok) {
@@ -122,7 +141,7 @@ export class WeatherFetcherService {
 
     // Get all unique dates in the range
     const dates = this.getDateRange(startDate, endDate);
-    let solarRadiationSource: 'satellite' | 'archive' | 'standard' = 'standard';
+    let solarRadiationSource: SolarRadiationSource = 'standard';
 
     console.log(`[WeatherFetcher] Enhancing solar radiation for ${dates.length} dates`);
 
@@ -208,7 +227,7 @@ export class WeatherFetcherService {
     if (!weatherData.hourly) return;
 
     indices.forEach((weatherIndex, dataIndex) => {
-      if (dataIndex < radiationData.shortwave_radiation_instant.length) {
+      if (dataIndex < radiationData.shortwave_radiation_instant.length && weatherData.hourly) {
         weatherData.hourly.shortwave_radiation_instant![weatherIndex] = radiationData.shortwave_radiation_instant[dataIndex];
         weatherData.hourly.direct_radiation_instant![weatherIndex] = radiationData.direct_radiation_instant[dataIndex];
         weatherData.hourly.diffuse_radiation_instant![weatherIndex] = radiationData.diffuse_radiation_instant[dataIndex];

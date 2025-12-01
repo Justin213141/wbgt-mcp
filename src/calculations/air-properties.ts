@@ -50,8 +50,16 @@ export function calculateAirProperties(Ta_K: number, P_Pa: number): {
 }
 
 /**
- * Calculate wind speed at 2m from wind speed at 10m
+ * Calculate wind speed at 2m from wind speed at 10m using wind profile power law
+ * @param u10m Wind speed at 10m height (m/s)
+ * @param p Power law exponent (default: 0.179 for typical daytime atmospheric conditions)
+ * @returns Wind speed at 2m height (m/s) with minimum speed safeguard
+ *
+ * Formula: u2 = u10 * (z2/z10)^α where α is the stability exponent
+ * Typical values: α ≈ 0.179 (daytime/unstable), α ≈ 1/7 ≈ 0.143 (neutral)
  */
-export function calculateWindAt2m(u10m: number, p: number = 0.15): number {
-  return u10m * Math.pow(2 / 10, p);
+export function calculateWindAt2m(u10m: number, p: number = 0.179): number {
+  const u2m = u10m * Math.pow(2 / 10, p);
+  // Minimum 0.13 m/s matches Kong et al. reference implementation
+  return Math.max(0.13, u2m);
 }

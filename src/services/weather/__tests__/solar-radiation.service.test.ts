@@ -19,28 +19,28 @@ describe('SolarRadiationService', () => {
     vi.restoreAllMocks();
   });
 
-  describe('isCurrentDay', () => {
-    it('should identify current day correctly', () => {
+  describe('isRecentDate', () => {
+    it('should identify recent date within 3 days correctly', () => {
       const today = new Date();
       const todayStr = today.toISOString().split('T')[0];
 
-      expect(SolarRadiationService['isCurrentDay'](todayStr)).toBe(true);
+      expect(SolarRadiationService['isRecentDate'](todayStr)).toBe(true);
     });
 
-    it('should identify past day correctly', () => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+    it('should identify past date beyond 3 days correctly', () => {
+      const fourDaysAgo = new Date();
+      fourDaysAgo.setDate(fourDaysAgo.getDate() - 4);
+      const fourDaysAgoStr = fourDaysAgo.toISOString().split('T')[0];
 
-      expect(SolarRadiationService['isCurrentDay'](yesterdayStr)).toBe(false);
+      expect(SolarRadiationService['isRecentDate'](fourDaysAgoStr)).toBe(false);
     });
 
-    it('should identify future day correctly', () => {
+    it('should identify future date correctly', () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-      expect(SolarRadiationService['isCurrentDay'](tomorrowStr)).toBe(false);
+      expect(SolarRadiationService['isRecentDate'](tomorrowStr)).toBe(false);
     });
   });
 
@@ -52,16 +52,11 @@ describe('SolarRadiationService', () => {
       timezone: 'Australia/Sydney'
     };
 
-    it('should use satellite API for current day', async () => {
-      // Mock current day
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const currentDayOptions = { ...mockOptions, date: todayStr };
-
-      // Mock satellite API response with valid daytime data
+    it('should use satellite API with satellite_radiation_seamless for any day', async () => {
+      // Mock satellite API response with valid data
       const mockSatelliteResponse = {
         hourly: {
-          time: [`${todayStr}T12:00:00`],
+          time: ['2023-06-21T12:00:00'],
           shortwave_radiation_instant: [800],
           direct_radiation_instant: [600],
           diffuse_radiation_instant: [200]
@@ -70,23 +65,34 @@ describe('SolarRadiationService', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
         json: async () => mockSatelliteResponse
       });
 
-      const result = await SolarRadiationService.fetchSolarRadiation(currentDayOptions);
+      const result = await SolarRadiationService.fetchSolarRadiation(mockOptions);
 
       expect(result.success).toBe(true);
-      expect(result.source).toBe('satellite_himawari');
+      expect(result.source).toBe('satellite_seamless');
       expect(result.data?.shortwave_radiation_instant).toEqual([800]);
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('satellite-api.open-meteo.com')
       );
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('models=jma_jaxa_himawari')
+        expect.stringContaining('models=satellite_radiation_seamless')
       );
     });
 
-    it('should use archive API for historical day', async () => {
+    it('should fall back to archive API when satellite APIs fail', async () => {
+      // Mock satellite API responses that fail
+      const emptyResponse = {
+        hourly: {
+          time: [],
+          shortwave_radiation_instant: [],
+          direct_radiation_instant: [],
+          diffuse_radiation_instant: []
+        }
+      };
+
       // Mock archive API response
       const mockArchiveResponse = {
         hourly: {
@@ -97,41 +103,40 @@ describe('SolarRadiationService', () => {
         }
       };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockArchiveResponse
-      });
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // Tier 1: satellite_radiation_seamless fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // Tier 2: best_match fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => mockArchiveResponse }); // Tier 3: archive succeeds
 
       const result = await SolarRadiationService.fetchSolarRadiation(mockOptions);
 
       expect(result.success).toBe(true);
-      expect(result.source).toBe('archive_historical');
+      expect(result.source).toBe('archive_reanalysis');
       expect(result.data?.shortwave_radiation_instant).toEqual([750]);
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('archive-api.open-meteo.com')
-      );
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
-    it('should fall back to archive API if satellite data is invalid', async () => {
-      // Mock current day
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const currentDayOptions = { ...mockOptions, date: todayStr };
+    it('should use forecast API for recent dates when all others fail', async () => {
+      // Mock recent date within past 3 days
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const recentDateOptions = { ...mockOptions, date: yesterdayStr };
 
-      // Mock satellite API response with invalid data (no daytime radiation)
-      const mockSatelliteResponse = {
+      // Mock empty responses for all satellite and archive APIs
+      const emptyResponse = {
         hourly: {
-          time: [`${todayStr}T12:00:00`, `${todayStr}T00:00:00`],
-          shortwave_radiation_instant: [0, 0], // All zeros, invalid for daytime
-          direct_radiation_instant: [0, 0],
-          diffuse_radiation_instant: [0, 0]
+          time: [],
+          shortwave_radiation_instant: [],
+          direct_radiation_instant: [],
+          diffuse_radiation_instant: []
         }
       };
 
-      // Mock archive API response for fallback
-      const mockArchiveResponse = {
+      // Mock forecast API response
+      const mockForecastResponse = {
         hourly: {
-          time: [`${todayStr}T12:00:00`],
+          time: [`${yesterdayStr}T12:00:00`],
           shortwave_radiation_instant: [800],
           direct_radiation_instant: [600],
           diffuse_radiation_instant: [200]
@@ -139,24 +144,16 @@ describe('SolarRadiationService', () => {
       };
 
       mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => mockSatelliteResponse // Himawari fails (invalid data)
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => mockSatelliteResponse // Best model also fails (invalid data)
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => mockArchiveResponse // Archive fallback succeeds
-        });
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // Tier 1: satellite_seamless fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // Tier 2: best_match fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // Tier 3: archive fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => mockForecastResponse }); // Tier 4: forecast succeeds
 
-      const result = await SolarRadiationService.fetchSolarRadiation(currentDayOptions);
+      const result = await SolarRadiationService.fetchSolarRadiation(recentDateOptions);
 
       expect(result.success).toBe(true);
-      expect(result.source).toBe('archive_current');
-      expect(mockFetch).toHaveBeenCalledTimes(3); // Himawari, best_model, then archive fallback
+      expect(result.source).toBe('forecast_model');
+      expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
     it('should handle API errors gracefully', async () => {
@@ -169,7 +166,7 @@ describe('SolarRadiationService', () => {
       const result = await SolarRadiationService.fetchSolarRadiation(mockOptions);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Archive API error: 500');
+      expect(result.error).toContain('Satellite API error: 500');
     });
 
     it('should handle network errors gracefully', async () => {
@@ -182,37 +179,36 @@ describe('SolarRadiationService', () => {
     });
   });
 
-  describe('hasValidDaytimeData', () => {
-    it('should detect valid daytime radiation data', () => {
+  describe('hasValidData', () => {
+    it('should detect valid radiation data', () => {
       const validData = {
         time: ['2023-06-21T12:00:00', '2023-06-21T15:00:00'],
         shortwave_radiation_instant: [800, 600]
       };
 
-      expect(SolarRadiationService['hasValidDaytimeData'](validData)).toBe(true);
+      expect(SolarRadiationService['hasValidData'](validData)).toBe(true);
     });
 
-    it('should reject data with no daytime radiation', () => {
+    it('should reject data with no radiation arrays', () => {
       const invalidData = {
-        time: ['2023-06-21T12:00:00', '2023-06-21T15:00:00'],
-        shortwave_radiation_instant: [0, 0] // All zeros, even during daytime
+        time: ['2023-06-21T12:00:00', '2023-06-21T15:00:00']
       };
 
-      expect(SolarRadiationService['hasValidDaytimeData'](invalidData)).toBe(false);
+      expect(SolarRadiationService['hasValidData'](invalidData as any)).toBe(false);
     });
 
-    it('should accept nighttime zeros as valid', () => {
-      const dataWithNighttime = {
+    it('should accept data with zero values', () => {
+      const dataWithZeros = {
         time: ['2023-06-21T02:00:00', '2023-06-21T12:00:00'],
         shortwave_radiation_instant: [0, 800] // Zero at night, non-zero during day
       };
 
-      expect(SolarRadiationService['hasValidDaytimeData'](dataWithNighttime)).toBe(true);
+      expect(SolarRadiationService['hasValidData'](dataWithZeros)).toBe(true);
     });
 
     it('should handle empty data', () => {
-      expect(SolarRadiationService['hasValidDaytimeData']()).toBe(false);
-      expect(SolarRadiationService['hasValidDaytimeData']({})).toBe(false);
+      expect(SolarRadiationService['hasValidData']()).toBe(false);
+      expect(SolarRadiationService['hasValidData']({})).toBe(false);
     });
   });
 
@@ -277,33 +273,30 @@ describe('SolarRadiationService', () => {
         timezone: 'Australia/Sydney'
       };
 
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const currentDayOptions = { ...mockOptions, date: todayStr };
-
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
         json: async () => ({
           hourly: {
-            time: [`${todayStr}T12:00:00`],
-            shortwave_radiation_instant: [800], // Valid daytime data
+            time: ['2023-06-21T12:00:00'],
+            shortwave_radiation_instant: [800],
             direct_radiation_instant: [600],
             diffuse_radiation_instant: [200]
           }
         })
       });
 
-      await SolarRadiationService.fetchSolarRadiation(currentDayOptions);
+      await SolarRadiationService.fetchSolarRadiation(mockOptions);
 
       const callUrl = mockFetch.mock.calls[0][0];
       expect(callUrl).toContain('satellite-api.open-meteo.com/v1/archive');
       expect(callUrl).toContain('latitude=-33.8018');
       expect(callUrl).toContain('longitude=151.1254');
-      expect(callUrl).toContain('models=jma_jaxa_himawari');
-      expect(callUrl).toContain('shortwave_radiation_instant%2Cdirect_radiation_instant%2Cdiffuse_radiation_instant');
+      expect(callUrl).toContain('models=satellite_radiation_seamless');
+      expect(callUrl).toContain('shortwave_radiation_instant');
     });
 
-    it('should construct archive API URL correctly', async () => {
+    it('should construct archive API URL correctly when satellites fail', async () => {
       const mockOptions = {
         latitude: -33.8018,
         longitude: 151.1254,
@@ -311,18 +304,21 @@ describe('SolarRadiationService', () => {
         timezone: 'Australia/Sydney'
       };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ hourly: {} })
-      });
+      const emptyResponse = { hourly: { time: [], shortwave_radiation_instant: [] } };
+      const validResponse = { hourly: { time: ['2023-06-21T12:00:00'], shortwave_radiation_instant: [800], direct_radiation_instant: [600], diffuse_radiation_instant: [200] } };
+
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // satellite_seamless fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => emptyResponse }) // best_match fails
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => validResponse }); // archive succeeds
 
       await SolarRadiationService.fetchSolarRadiation(mockOptions);
 
-      const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toContain('archive-api.open-meteo.com/v1/archive');
-      expect(callUrl).toContain('start_date=2023-06-21');
-      expect(callUrl).toContain('end_date=2023-06-21');
-      expect(callUrl).toContain('shortwave_radiation_instant%2Cdirect_radiation_instant%2Cdiffuse_radiation_instant');
+      const archiveCallUrl = mockFetch.mock.calls[2][0];
+      expect(archiveCallUrl).toContain('archive-api.open-meteo.com/v1/archive');
+      expect(archiveCallUrl).toContain('start_date=2023-06-21');
+      expect(archiveCallUrl).toContain('end_date=2023-06-21');
+      expect(archiveCallUrl).toContain('shortwave_radiation_instant');
     });
   });
 });

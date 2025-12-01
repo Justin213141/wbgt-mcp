@@ -60,7 +60,7 @@ describe('WeatherFetcherService', () => {
       });
 
       expect(result.solarRadiationSource).toBe('standard');
-      expect(result.hourly.temperature_2m).toEqual([25]);
+      expect(result.hourly?.temperature_2m).toEqual([25]);
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockSolarRadiationService.fetchSolarRadiation).not.toHaveBeenCalled();
     });
@@ -110,7 +110,7 @@ describe('WeatherFetcherService', () => {
 
       expect(result.solarRadiationSource).toBe('satellite');
       expect(mockSolarRadiationService.fetchSolarRadiation).toHaveBeenCalled();
-      expect(result.hourly.shortwave_radiation_instant[1]).toBe(800); // Enhanced value
+      expect(result.hourly?.shortwave_radiation_instant?.[1]).toBe(800); // Enhanced value
     });
 
     it('should handle multiple dates for enhancement', async () => {
@@ -157,7 +157,7 @@ describe('WeatherFetcherService', () => {
       const result = await WeatherFetcherService.fetchWeather(mockOptions);
 
       expect(mockSolarRadiationService.fetchSolarRadiation).toHaveBeenCalledTimes(3);
-      expect(result.hourly.shortwave_radiation_instant).toEqual([600, 800, 700]);
+      expect(result.hourly?.shortwave_radiation_instant).toEqual([600, 800, 700]);
     });
 
     it('should continue with standard data if enhancement fails', async () => {
@@ -179,7 +179,7 @@ describe('WeatherFetcherService', () => {
       const result = await WeatherFetcherService.fetchWeather(mockOptions);
 
       expect(result.solarRadiationSource).toBe('standard');
-      expect(result.hourly.shortwave_radiation_instant).toEqual([500]);
+      expect(result.hourly?.shortwave_radiation_instant).toEqual([500]);
     });
   });
 
@@ -205,7 +205,7 @@ describe('WeatherFetcherService', () => {
         timezone: mockOptions.timezone
       });
 
-      expect(result.hourly.temperature_2m).toEqual([25]);
+      expect(result.hourly?.temperature_2m).toEqual([25]);
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('start_date=2023-06-21&end_date=2023-06-21')
       );
@@ -229,7 +229,7 @@ describe('WeatherFetcherService', () => {
 
       const result = await WeatherFetcherService.fetchHistoricalWeather(mockOptions);
 
-      expect(result.hourly.temperature_2m).toEqual([20, 25]);
+      expect(result.hourly?.temperature_2m).toEqual([20, 25]);
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('start_date=2023-06-20&end_date=2023-06-22')
       );

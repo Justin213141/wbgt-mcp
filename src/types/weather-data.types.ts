@@ -103,6 +103,18 @@ export interface SRData {
 }
 
 /**
+ * Solar Radiation Source Types
+ */
+export type SolarRadiationSource =
+  | 'satellite_seamless'      // Observational satellite data (seamless model)
+  | 'satellite_model'         // Model satellite data (best match)
+  | 'archive_reanalysis'      // Reanalysis model data (historical)
+  | 'forecast_model'          // Forecast model data (recent/current)
+  | 'satellite'               // Legacy satellite (for backward compatibility)
+  | 'archive'                 // Legacy archive (for backward compatibility)
+  | 'standard';               // Standard/default source
+
+/**
  * Weather Data Response from Open-Meteo API
  */
 export interface WeatherData {
@@ -117,6 +129,7 @@ export interface WeatherData {
   timezone?: string;
   timezone_abbreviation?: string;
   utc_offset_seconds?: number;
+  solarRadiationSource?: SolarRadiationSource;
 }
 
 /**

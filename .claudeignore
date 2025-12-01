@@ -1,0 +1,11 @@
+# .claudeignore
+node_modules/
+*.log
+*.tmp
+coverage/
+dist/
+build/
+.env
+.env.local
+.DS_Store
+*.pack        # If you really want to micro-optimize

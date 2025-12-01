@@ -9,13 +9,51 @@ import {
   calculateSolarZenithAngleJST,
   calculateSolarZenithAngleByTimezone
 } from './solar/solar-geometry';
-import { calculateBuckSaturationVaporPressure } from './vapor-pressure';
+import { calculateBuckSaturationVaporPressure, calculateDewPointFromRH } from './vapor-pressure';
 import { calculateWindAt2m, calculateAirProperties } from './air-properties';
 import { calculateRadiationComponents } from './radiation';
 import { calculateHeatTransferCoefficients } from './heat-transfer';
 
+// Physics-based minimum heat transfer coefficient (~5 W/(m²·K) = radiative transfer alone)
+const MIN_HEAT_TRANSFER_COEFFICIENT = 5.0;
+
+// Minimum wind speed at 10m for numerical stability (raised from 0.2 to 1.0 m/s)
+const MIN_WIND_SPEED_10M = 1.0;
+
 /**
- * Calculate Kong black globe temperature
+ * Validate meteorological input parameters for Kong WBGT calculation
+ * @throws Error if any parameter is out of valid range
+ */
+export function validateInputs(
+  Ta: number,
+  RH: number,
+  windSpeed: number,
+  SRdown: number,
+  P_hPa: number
+): void {
+  if (Ta < -40 || Ta > 60) {
+    throw new Error(`Air temperature ${Ta}°C out of valid range (-40 to 60°C)`);
+  }
+
+  if (RH < 0 || RH > 100) {
+    throw new Error(`Relative humidity ${RH}% out of valid range (0 to 100%)`);
+  }
+
+  if (windSpeed < 0.1 || windSpeed > 50) {
+    throw new Error(`Wind speed ${windSpeed} m/s out of valid range (0.1 to 50 m/s)`);
+  }
+
+  if (SRdown < 0 || SRdown > 1400) {
+    throw new Error(`Solar radiation ${SRdown} W/m² out of valid range (0 to 1400 W/m²)`);
+  }
+
+  if (P_hPa < 500 || P_hPa > 1100) {
+    throw new Error(`Pressure ${P_hPa} hPa out of valid range (500 to 1100 hPa)`);
+  }
+}
+
+/**
+ * Calculate Kong black globe temperature with numerical stability protection
  */
 export function calculateKongBlackGlobe(
   Ta: number,
@@ -29,17 +67,21 @@ export function calculateKongBlackGlobe(
   // Numerator: shortwave + longwave radiation
   const numerator = SRg + LRg - STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * Math.pow(Ta_K, 4);
 
-  // Denominator: total heat transfer coefficient
-  const denominator = h_cg + h_rg;
-
-  if (denominator === 0) return Ta;
+  // Denominator: total heat transfer coefficient with physics-based floor
+  // Minimum ~5 W/(m²·K) corresponds to radiative transfer alone (hr ≈ 5)
+  const denominator = Math.max(h_cg + h_rg, MIN_HEAT_TRANSFER_COEFFICIENT);
 
   const T_g_K = Ta_K + numerator / denominator;
   return T_g_K - 273.15;
 }
 
 /**
- * Calculate Kong natural wet bulb temperature
+ * Calculate Kong natural wet bulb temperature using the zero-iteration formula
+ * with physical constraints and numerical stability protection.
+ *
+ * Physical bounds:
+ * - Upper: Natural wet bulb cannot exceed dry bulb temperature (Ta)
+ * - Lower: Natural wet bulb cannot be below dew point (thermodynamic limit)
  */
 export function calculateKongNaturalWetBulb(
   Ta: number,
@@ -54,45 +96,39 @@ export function calculateKongNaturalWetBulb(
   P_Pa: number
 ): number {
   const Ta_K = Ta + 273.15;
-  const Tw_K = Tw + 273.15;
 
-  // Saturation vapor pressure at air temperature and wick temperature
+  // Saturation vapor pressure at air temperature
   const e_sat_Ta = calculateBuckSaturationVaporPressure(Ta);
-  const e_sat_Tw = calculateBuckSaturationVaporPressure(Tw);
 
-  // Psychrometric equation term
-  const psych_term = beta * (e_sat_Ta - ea);
+  // Vapor Pressure Deficit term: VPD = beta * (es - ea)
+  // Protect against negative VPD (can occur with measurement errors)
+  const VPD = beta * Math.max(e_sat_Ta - ea, 0.0);
 
-  // Radiation balance per Kong zero-iteration formula (WBGT.md line 66)
+  // Radiation balance per Kong zero-iteration formula
   // Uses Ta⁴ as linearization point (not Tnw⁴)
   const rad_balance = SRw + LRw - STEFAN_BOLTZMANN * WICK_EMISSIVITY * Math.pow(Ta_K, 4);
 
-  // Numerator: net radiation minus psychrometric cooling
-  const numerator = rad_balance - psych_term;
+  // Denominator: total heat transfer coefficient with physics-based floor
+  // Minimum ~5 W/(m²·K) corresponds to radiative transfer alone
+  const denominator = Math.max(h_ew + h_cw + h_rw, MIN_HEAT_TRANSFER_COEFFICIENT);
 
-  // Denominator: total heat transfer coefficient
-  const denominator = h_ew + h_cw + h_rw;
+  // Zero-iteration formula: Tnw = Ta + (SR + LR - VPD) / (he + hc + hr)
+  let T_nw = Ta + (rad_balance - VPD) / denominator;
 
-  if (denominator === 0) return Ta;
+  // Calculate dew point for lower bound
+  const RH = (ea / e_sat_Ta) * 100;
+  const dewPoint = calculateDewPointFromRH(Ta, Math.max(1, Math.min(99, RH)));
 
-  const T_nw_K = Ta_K + numerator / denominator;
-  const T_nw = T_nw_K - 273.15;
+  // Apply physical constraints:
+  // 1. Natural wet bulb cannot exceed dry bulb temperature
+  T_nw = Math.min(T_nw, Ta);
 
-  // Physical constraint validation: natural wet bulb cannot exceed air temperature
-  // Allow small margin for measurement and calculation errors
-  const PHYSICAL_CONSTRAINT_MARGIN = 2.0; // °C
+  // 2. Natural wet bulb cannot be below dew point (thermodynamic limit)
+  T_nw = Math.max(T_nw, dewPoint);
 
-  if (T_nw > Ta + PHYSICAL_CONSTRAINT_MARGIN) {
-    console.warn(`Physical constraint violation: Natural wet bulb temperature (${T_nw.toFixed(1)}°C) exceeds air temperature (${Ta.toFixed(1)}°C) by more than ${PHYSICAL_CONSTRAINT_MARGIN}°C. Clamping to air temperature.`);
-    return Ta;
-  }
-
-  // Additional sanity check: wet bulb shouldn't be unreasonably low
-  const MIN_REASONABLE_WET_BULB = Ta - 30; // Maximum 30°C below air temperature
-  if (T_nw < MIN_REASONABLE_WET_BULB) {
-    console.warn(`Natural wet bulb temperature (${T_nw.toFixed(1)}°C) unreasonably low for air temperature (${Ta.toFixed(1)}°C). Clamping to minimum reasonable value.`);
-    return MIN_REASONABLE_WET_BULB;
-  }
+  // 3. Apply absolute bounds for numerical safety
+  T_nw = Math.max(T_nw, -50.0);
+  T_nw = Math.min(T_nw, 60.0);
 
   return T_nw;
 }
@@ -197,6 +233,9 @@ export function calculateKongWBGTPipelineByTimezone(
     direct_fraction: number;
   };
 } {
+  // Apply wind speed floor BEFORE processing for numerical stability
+  const u10m_safe = Math.max(MIN_WIND_SPEED_10M, u10m ?? MIN_WIND_SPEED_10M);
+
   // Step 1: Solar geometry (timezone-aware)
   const theta_deg = calculateSolarZenithAngleByTimezone(lat, lon, timestamp, utcOffset, hasDST);
 
@@ -230,7 +269,7 @@ export function calculateKongWBGTPipelineByTimezone(
   );
 
   // Step 4: Air properties at Ta and P
-  const u2m = calculateWindAt2m(u10m);
+  const u2m = calculateWindAt2m(u10m_safe);
   const airProps = calculateAirProperties(Ta_K, P_Pa);
 
   // Step 5: Heat transfer coefficients
@@ -311,6 +350,9 @@ export function calculateKongWBGTPipeline(
     direct_fraction: number;
   };
 } {
+  // Apply wind speed floor BEFORE processing for numerical stability
+  const u10m_safe = Math.max(MIN_WIND_SPEED_10M, u10m ?? MIN_WIND_SPEED_10M);
+
   // Step 1: Solar geometry
   const theta_deg = calculateSolarZenithAngle(lat, lon, timestamp);
 
@@ -344,7 +386,7 @@ export function calculateKongWBGTPipeline(
   );
 
   // Step 4: Air properties at Ta and P
-  const u2m = calculateWindAt2m(u10m);
+  const u2m = calculateWindAt2m(u10m_safe);
   const airProps = calculateAirProperties(Ta_K, P_Pa);
 
   // Step 5: Heat transfer coefficients
@@ -425,6 +467,9 @@ export function calculateKongWBGTPipelineJST(
     direct_fraction: number;
   };
 } {
+  // Apply wind speed floor BEFORE processing for numerical stability
+  const u10m_safe = Math.max(MIN_WIND_SPEED_10M, u10m ?? MIN_WIND_SPEED_10M);
+
   // Step 1: Solar geometry (using JST timezone)
   const theta_deg = calculateSolarZenithAngleJST(lat, lon, timestamp);
 
@@ -458,7 +503,7 @@ export function calculateKongWBGTPipelineJST(
   );
 
   // Step 4: Air properties at Ta and P
-  const u2m = calculateWindAt2m(u10m);
+  const u2m = calculateWindAt2m(u10m_safe);
   const airProps = calculateAirProperties(Ta_K, P_Pa);
 
   // Step 5: Heat transfer coefficients

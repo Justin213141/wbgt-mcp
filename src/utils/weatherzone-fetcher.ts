@@ -21,12 +21,32 @@ export interface WeatherZoneObservation {
   wind_speed_ms?: number; // NOTE: WeatherZone labels this as 'wind_kmh' but values are already in m/s
 }
 
+export type WeatherZoneErrorType =
+  | 'browser_unavailable'
+  | 'browser_launch_failed'
+  | 'rate_limit_exceeded'
+  | 'navigation_timeout'
+  | 'navigation_failed'
+  | 'page_load_error'
+  | 'no_data_found'
+  | 'parsing_error'
+  | 'unknown_error';
+
+export interface WeatherZoneErrorDetails {
+  type: WeatherZoneErrorType;
+  message: string;
+  httpStatus?: number;
+  retryAfter?: number; // seconds
+  originalError?: string;
+}
+
 export interface WeatherZoneFetchResult {
   success: boolean;
   observations: WeatherZoneObservation[];
   cached?: boolean;
   source: 'weatherzone' | 'cache' | 'error';
   error?: string;
+  errorDetails?: WeatherZoneErrorDetails;
   site_id?: string;
   date?: string;
 }
@@ -55,28 +75,147 @@ export async function fetchWeatherZoneObservations(
 
   // Require browser binding
   if (!browserBinding) {
+    const errorDetails: WeatherZoneErrorDetails = {
+      type: 'browser_unavailable',
+      message: 'Browser rendering not available. BROWSER binding is not configured in wrangler.jsonc.'
+    };
+    console.error(`[WEATHERZONE] ${errorDetails.message}`);
     return {
       success: false,
       observations: [],
       source: 'error',
-      error: 'Browser rendering not available. Browser binding required.',
+      error: errorDetails.message,
+      errorDetails,
       site_id: siteId,
       date: observationDate
     };
   }
 
   let browser;
+  let httpStatus: number | undefined;
+
   try {
     console.log(`[WEATHERZONE] Launching browser for ${url}`);
 
     // Launch browser using Puppeteer
-    browser = await puppeteer.launch(browserBinding);
+    try {
+      browser = await puppeteer.launch(browserBinding);
+    } catch (launchError: any) {
+      // Detect rate limit errors from Cloudflare Browser Rendering
+      if (launchError.message?.includes('429') || launchError.message?.toLowerCase().includes('rate limit')) {
+        const errorDetails: WeatherZoneErrorDetails = {
+          type: 'rate_limit_exceeded',
+          message: 'Cloudflare Browser Rendering rate limit exceeded (3 launches/minute or 10 minutes/day)',
+          httpStatus: 429,
+          retryAfter: 60,
+          originalError: launchError.message
+        };
+        console.error(`[WEATHERZONE] ${errorDetails.message}`, launchError);
+        return {
+          success: false,
+          observations: [],
+          source: 'error',
+          error: errorDetails.message,
+          errorDetails,
+          site_id: siteId,
+          date: observationDate
+        };
+      }
+
+      // Generic browser launch failure
+      const errorDetails: WeatherZoneErrorDetails = {
+        type: 'browser_launch_failed',
+        message: 'Failed to launch browser for rendering',
+        originalError: launchError.message
+      };
+      console.error(`[WEATHERZONE] ${errorDetails.message}`, launchError);
+      return {
+        success: false,
+        observations: [],
+        source: 'error',
+        error: errorDetails.message,
+        errorDetails,
+        site_id: siteId,
+        date: observationDate
+      };
+    }
+
     const page = await browser.newPage();
 
     try {
+      // Capture HTTP response status
+      page.on('response', (response) => {
+        if (response.url() === url) {
+          httpStatus = response.status();
+          console.log(`[WEATHERZONE] HTTP response status: ${httpStatus}`);
+        }
+      });
+
       // Navigate to WeatherZone page
       console.log(`[WEATHERZONE] Navigating to ${url}`);
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+
+      try {
+        await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+      } catch (navError: any) {
+        // Detect specific navigation errors
+        if (navError.message?.toLowerCase().includes('timeout')) {
+          const errorDetails: WeatherZoneErrorDetails = {
+            type: 'navigation_timeout',
+            message: 'Navigation to WeatherZone page timed out after 30 seconds',
+            httpStatus,
+            originalError: navError.message
+          };
+          console.error(`[WEATHERZONE] ${errorDetails.message}`, navError);
+          return {
+            success: false,
+            observations: [],
+            source: 'error',
+            error: errorDetails.message,
+            errorDetails,
+            site_id: siteId,
+            date: observationDate
+          };
+        }
+
+        // Check for rate limit from WeatherZone website
+        if (httpStatus === 429) {
+          const errorDetails: WeatherZoneErrorDetails = {
+            type: 'rate_limit_exceeded',
+            message: 'WeatherZone website returned 429 Too Many Requests',
+            httpStatus: 429,
+            retryAfter: 60,
+            originalError: navError.message
+          };
+          console.error(`[WEATHERZONE] ${errorDetails.message}`, navError);
+          return {
+            success: false,
+            observations: [],
+            source: 'error',
+            error: errorDetails.message,
+            errorDetails,
+            site_id: siteId,
+            date: observationDate
+          };
+        }
+
+        // Generic navigation failure
+        const errorDetails: WeatherZoneErrorDetails = {
+          type: 'navigation_failed',
+          message: `Failed to navigate to WeatherZone page${httpStatus ? ` (HTTP ${httpStatus})` : ''}`,
+          httpStatus,
+          originalError: navError.message
+        };
+        console.error(`[WEATHERZONE] ${errorDetails.message}`, navError);
+        return {
+          success: false,
+          observations: [],
+          source: 'error',
+          error: errorDetails.message,
+          errorDetails,
+          site_id: siteId,
+          date: observationDate
+        };
+      }
 
       // Wait for observations table to appear
       await page.waitForSelector('table, [data-table], .observations-table', { timeout: 10000 })
@@ -84,63 +223,151 @@ export async function fetchWeatherZoneObservations(
 
       // Extract observations from rendered page using WeatherZone's class structure
       console.log(`[WEATHERZONE] Extracting observations using class-based selectors`);
-      const observations = await page.evaluate((obsDate) => {
-        const results: any[] = [];
-
-        // Find all observation rows - they have the hourly-obs-* class pattern
-        const rows = document.querySelectorAll('tr');
-
-        for (const row of rows) {
-          try {
-            // Extract data from cells with specific classes
-            const dateCell = row.querySelector('.hourly-obs-date');
-            const tempCell = row.querySelector('.hourly-obs-temperature');
-            const humidityCell = row.querySelector('.hourly-obs-humidityt, .hourly-obs-humidity');
-            const windCell = row.querySelector('.hourly-obs-windSpeed');
-            const dewPointCell = row.querySelector('.hourly-obs-dewPoint');
-            const apparentTempCell = row.querySelector('.hourly-obs-apparentTemperature');
-
-            if (!dateCell || !tempCell) continue; // Skip rows without required fields
-
-            // Extract text from cells (may be in <p> tags or directly)
-            const dateText = dateCell.textContent?.trim() || '';
-            const tempText = tempCell.querySelector('p')?.textContent?.trim() ||
-                           tempCell.textContent?.trim() || '';
-            const humidityText = humidityCell?.querySelector('p')?.textContent?.trim() ||
-                               humidityCell?.textContent?.trim() || '';
-            // NOTE: WeatherZone labels wind field as 'wind_kmh' but values are already in m/s - no conversion needed
-            const windText = windCell?.querySelector('p')?.textContent?.trim() ||
-                           windCell?.textContent?.trim() || '';
-            const dewPointText = dewPointCell?.querySelector('p')?.textContent?.trim() ||
-                               dewPointCell?.textContent?.trim() || '';
-
-            // Parse numeric values
-            const temp = parseFloat(tempText);
-            const humidity = parseFloat(humidityText);
-            const windSpeed = parseFloat(windText); // Already in m/s despite 'wind_kmh' label
-            const dewPoint = parseFloat(dewPointText);
-
-            if (!isNaN(temp) && dateText) {
-              results.push({
-                time: dateText,
-                temperature_c: temp,
-                humidity_pct: !isNaN(humidity) ? humidity : undefined,
-                wind_speed_ms: !isNaN(windSpeed) ? windSpeed : undefined,
-                dewpoint_c: !isNaN(dewPoint) ? dewPoint : undefined
-              });
+      console.log(`[WEATHERZONE] observationDate parameter: "${observationDate}"`);
+      let observations: any[];
+      try {
+        observations = await page.evaluate((obsDate, pageUrl) => {
+          // CRITICAL: Validate obsDate was passed correctly from outer context
+          // Fallback: extract from URL if obsDate is invalid
+          let effectiveDate = obsDate;
+          if (!effectiveDate || typeof effectiveDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+            // Try to extract date from URL: /observations/YYYY-MM-DD
+            const urlMatch = pageUrl?.match(/\/observations\/(\d{4}-\d{2}-\d{2})/);
+            if (urlMatch) {
+              effectiveDate = urlMatch[1];
+              console.log('[WEATHERZONE-EVAL] Recovered date from URL:', effectiveDate);
+            } else {
+              console.error('[WEATHERZONE-EVAL] Invalid obsDate and could not recover from URL:', obsDate);
+              throw new Error(`Invalid obsDate passed to page.evaluate: ${obsDate}`);
             }
-          } catch (e) {
-            // Skip malformed rows
-            continue;
           }
-        }
+          const results: any[] = [];
 
-        return results;
-      }, observationDate);
+          // Find all observation rows - they have the hourly-obs-* class pattern
+          const rows = document.querySelectorAll('tr');
+
+          for (const row of rows) {
+            try {
+              // Extract data from cells with specific classes
+              const dateCell = row.querySelector('.hourly-obs-date');
+              const tempCell = row.querySelector('.hourly-obs-temperature');
+              const humidityCell = row.querySelector('.hourly-obs-humidityt, .hourly-obs-humidity');
+              const windCell = row.querySelector('.hourly-obs-windSpeed');
+              const dewPointCell = row.querySelector('.hourly-obs-dewPoint');
+              const apparentTempCell = row.querySelector('.hourly-obs-apparentTemperature');
+
+              if (!dateCell || !tempCell) continue; // Skip rows without required fields
+
+              // Extract text from cells (may be in <p> tags or directly)
+              const dateText = dateCell.textContent?.trim() || '';
+              const tempText = tempCell.querySelector('p')?.textContent?.trim() ||
+                             tempCell.textContent?.trim() || '';
+              const humidityText = humidityCell?.querySelector('p')?.textContent?.trim() ||
+                                 humidityCell?.textContent?.trim() || '';
+              // NOTE: WeatherZone labels wind field as 'wind_kmh' but values are already in m/s - no conversion needed
+              const windText = windCell?.querySelector('p')?.textContent?.trim() ||
+                             windCell?.textContent?.trim() || '';
+              const dewPointText = dewPointCell?.querySelector('p')?.textContent?.trim() ||
+                                 dewPointCell?.textContent?.trim() || '';
+
+              // Parse numeric values
+              const temp = parseFloat(tempText);
+              const humidity = parseFloat(humidityText);
+              const windSpeed = parseFloat(windText); // Already in m/s despite 'wind_kmh' label
+              const dewPoint = parseFloat(dewPointText);
+
+              if (!isNaN(temp) && dateText) {
+                // Convert time text to ISO datetime
+                // Known formats:
+                // - "Sun 11:50 AEDT" (WeatherZone hourly obs page)
+                // - "8:00 AM" or "8:00 PM" (12-hour)
+                // - "14:30" (24-hour)
+                // - Already ISO format (2025-12-01T10:20:00)
+                let isoTime: string;
+                // Check for ISO format: YYYY-MM-DDTHH:MM:SS (must be full ISO pattern, not just containing 'T')
+                // The previous check `dateText.includes('T')` incorrectly matched "AEDT" timezone strings
+                if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dateText)) {
+                  // Already looks like ISO format
+                  isoTime = dateText;
+                } else {
+                  // Parse time and combine with observation date
+                  let hours = 0;
+                  let minutes = 0;
+                  let parsed = false;
+
+                  // Try parsing "Sun 11:50 AEDT" format (day + HH:MM + timezone)
+                  const wzMatch = dateText.match(/\w+\s+(\d{1,2}):(\d{2})\s*(?:AEDT|AEST|[A-Z]{3,4})?/i);
+                  if (wzMatch) {
+                    hours = parseInt(wzMatch[1], 10);
+                    minutes = parseInt(wzMatch[2], 10);
+                    parsed = true;
+                  }
+
+                  // Try parsing "8:00 AM" or "8:00 PM" format
+                  if (!parsed) {
+                    const ampmMatch = dateText.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+                    if (ampmMatch) {
+                      hours = parseInt(ampmMatch[1], 10);
+                      minutes = parseInt(ampmMatch[2], 10);
+                      const isPM = ampmMatch[3].toUpperCase() === 'PM';
+                      if (isPM && hours !== 12) hours += 12;
+                      if (!isPM && hours === 12) hours = 0;
+                      parsed = true;
+                    }
+                  }
+
+                  // Try parsing "14:30" 24-hour format
+                  if (!parsed) {
+                    const h24Match = dateText.match(/(\d{1,2}):(\d{2})/);
+                    if (h24Match) {
+                      hours = parseInt(h24Match[1], 10);
+                      minutes = parseInt(h24Match[2], 10);
+                      parsed = true;
+                    }
+                  }
+
+                  // Construct ISO datetime: effectiveDate is YYYY-MM-DD
+                  const hh = hours.toString().padStart(2, '0');
+                  const mm = minutes.toString().padStart(2, '0');
+                  isoTime = `${effectiveDate}T${hh}:${mm}:00`;
+                }
+
+                results.push({
+                  time: isoTime,
+                  temperature_c: temp,
+                  humidity_pct: !isNaN(humidity) ? humidity : undefined,
+                  wind_speed_ms: !isNaN(windSpeed) ? windSpeed : undefined,
+                  dewpoint_c: !isNaN(dewPoint) ? dewPoint : undefined
+                });
+              }
+            } catch (e) {
+              // Skip malformed rows
+              continue;
+            }
+          }
+
+          return results;
+        }, observationDate, url);
+      } catch (evalError: any) {
+        console.error(`[WEATHERZONE] page.evaluate() error: ${evalError.message}`);
+        const errorDetails: WeatherZoneErrorDetails = {
+          type: 'parsing_error',
+          message: evalError.message || 'Failed to extract observations from page'
+        };
+        return {
+          success: false,
+          observations: [],
+          error: `Observation extraction failed: ${evalError.message}`,
+          errorDetails,
+          site_id: siteId,
+          date: observationDate
+        };
+      }
 
       console.log(`[WEATHERZONE] Found ${observations.length} observations`);
 
       if (observations.length > 0) {
+        console.log(`[WEATHERZONE] Successfully extracted ${observations.length} observations`);
         return {
           success: true,
           observations,
@@ -149,15 +376,43 @@ export async function fetchWeatherZoneObservations(
           date: observationDate
         };
       } else {
-        // Get page HTML for debugging
-        const html = await page.content();
-        console.log(`[WEATHERZONE] No observations found. Page title: ${await page.title()}`);
+        // Get page details for debugging
+        const pageTitle = await page.title();
+        const pageUrl = page.url();
+        console.log(`[WEATHERZONE] No observations found. Page title: "${pageTitle}", URL: ${pageUrl}`);
 
+        // Check if we got a non-200 response
+        if (httpStatus && httpStatus !== 200) {
+          const errorDetails: WeatherZoneErrorDetails = {
+            type: 'page_load_error',
+            message: `WeatherZone returned HTTP ${httpStatus} - data may not be available for this date`,
+            httpStatus
+          };
+          console.error(`[WEATHERZONE] ${errorDetails.message}`);
+          return {
+            success: false,
+            observations: [],
+            source: 'error',
+            error: errorDetails.message,
+            errorDetails,
+            site_id: siteId,
+            date: observationDate
+          };
+        }
+
+        // Page loaded successfully but no data found
+        const errorDetails: WeatherZoneErrorDetails = {
+          type: 'no_data_found',
+          message: 'No observations found in rendered page. Data may not be available for this date/station, or page structure changed.',
+          httpStatus
+        };
+        console.error(`[WEATHERZONE] ${errorDetails.message}`);
         return {
           success: false,
           observations: [],
           source: 'error',
-          error: 'No observations found in rendered page. Page may have different structure.',
+          error: errorDetails.message,
+          errorDetails,
           site_id: siteId,
           date: observationDate
         };
@@ -166,18 +421,31 @@ export async function fetchWeatherZoneObservations(
       await page.close();
     }
   } catch (error: any) {
-    console.error(`[WEATHERZONE] Browser rendering error:`, error);
+    // Catch-all for any unexpected errors
+    const errorDetails: WeatherZoneErrorDetails = {
+      type: 'unknown_error',
+      message: 'Unexpected error during browser rendering',
+      httpStatus,
+      originalError: error?.message || String(error)
+    };
+    console.error(`[WEATHERZONE] ${errorDetails.message}:`, error);
     return {
       success: false,
       observations: [],
       source: 'error',
-      error: error?.message || 'Browser rendering failed',
+      error: errorDetails.message,
+      errorDetails,
       site_id: siteId,
       date: observationDate
     };
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+        console.log(`[WEATHERZONE] Browser closed successfully`);
+      } catch (closeError) {
+        console.warn(`[WEATHERZONE] Error closing browser:`, closeError);
+      }
     }
   }
 }

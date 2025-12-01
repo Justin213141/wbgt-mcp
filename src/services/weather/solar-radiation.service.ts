@@ -1,14 +1,12 @@
 /**
  * Solar Radiation Service - Enhanced Data Fetching System
- * Implements the tiered approach for solar radiation observations:
  *
- * Current day preferences:
- * 1. satellite-api.open-meteo.com with Himawari models
- * 2. satellite-api.open-meteo.com with best model
- * 3. archive-api.open-meteo.com solar radiation instant
+ * Implements tiered solar radiation data with a single API call:
+ * - Tier 1 (observational): *_satellite_radiation_seamless
+ * - Tier 2 (model): *_archive_best_match
  *
- * Historical days:
- * 1. archive-api.open-meteo.com solar radiation instant
+ * Uses satellite-api.open-meteo.com with models=satellite_radiation_seamless,best_match
+ * and past_days=3 to handle recent dates in a single request.
  */
 
 import type { WeatherData } from '../../types/weather-data.types';
@@ -28,113 +26,89 @@ export interface SolarRadiationResult {
     diffuse_radiation_instant?: number[];
     time?: string[];
   };
-  source?: 'satellite_himawari' | 'satellite_best' | 'archive_current' | 'archive_historical';
+  source?: 'satellite_seamless' | 'satellite_model' | 'archive_reanalysis' | 'forecast_model';
   error?: string;
 }
 
+// Response type for the combined satellite API call
+interface SatelliteAPIResponse {
+  hourly: {
+    time: string[];
+    // Tier 1: Observational satellite data
+    shortwave_radiation_instant_satellite_radiation_seamless?: number[];
+    direct_radiation_instant_satellite_radiation_seamless?: number[];
+    diffuse_radiation_instant_satellite_radiation_seamless?: number[];
+    // Tier 2: Archive best match model data
+    shortwave_radiation_instant_archive_best_match?: number[];
+    direct_radiation_instant_archive_best_match?: number[];
+    diffuse_radiation_instant_archive_best_match?: number[];
+  };
+}
+
 /**
- * Solar Radiation Service with enhanced fetching strategy
+ * Solar Radiation Service with tiered data fetching
  */
 export class SolarRadiationService {
   private static readonly SATELLITE_API_BASE = 'https://satellite-api.open-meteo.com/v1/archive';
-  private static readonly ARCHIVE_API_BASE = 'https://archive-api.open-meteo.com/v1/archive';
 
   /**
-   * Check if a date is the current day (changes at midnight)
-   */
-  private static isCurrentDay(date: string): boolean {
-    const today = new Date();
-    const targetDate = new Date(date);
-
-    // Compare year, month, and day only (ignore time)
-    return (
-      today.getFullYear() === targetDate.getFullYear() &&
-      today.getMonth() === targetDate.getMonth() &&
-      today.getDate() === targetDate.getDate()
-    );
-  }
-
-  /**
-   * Fetch solar radiation data with tiered approach
+   * Fetch solar radiation data with tiered approach using single API call
+   *
+   * Returns both Tier 1 (satellite_radiation_seamless) and Tier 2 (best_match) data
+   * Prefers Tier 1 when available, falls back to Tier 2
    */
   static async fetchSolarRadiation(options: SolarRadiationOptions): Promise<SolarRadiationResult> {
     const { latitude, longitude, date, timezone = 'auto' } = options;
 
     try {
-      if (this.isCurrentDay(date)) {
-        console.log(`[SolarRadiation] Current day detected (${date}), trying satellite APIs first`);
+      // Single API call with both models and past_days=3 for recent date coverage
+      const url = new URL(this.SATELLITE_API_BASE);
+      url.searchParams.set('latitude', latitude.toString());
+      url.searchParams.set('longitude', longitude.toString());
+      url.searchParams.set('hourly', 'shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant');
+      url.searchParams.set('models', 'satellite_radiation_seamless,best_match');
+      url.searchParams.set('timezone', timezone);
+      url.searchParams.set('past_days', '3');
 
-        // Tier 1a: Try satellite API with Himawari models
-        console.log(`[SolarRadiation] Trying satellite API with Himawari models`);
-        const himawariResult = await this.fetchFromSatelliteAPI({
-          latitude,
-          longitude,
-          date,
-          timezone,
-          models: 'jma_jaxa_himawari',
-          includePastDays: 2
-        });
+      console.log(`[SolarRadiation] Fetching tiered solar data: ${url.toString()}`);
 
-        if (himawariResult.success && this.hasValidDaytimeData(himawariResult.data)) {
-          console.log('[SolarRadiation] Satellite API with Himawari models returned valid data');
-          return {
-            ...himawariResult,
-            source: 'satellite_himawari'
-          };
-        }
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(`Satellite API error: ${response.status} ${response.statusText}`);
+      }
 
-        // Tier 1b: Try satellite API with best model
-        console.log(`[SolarRadiation] Himawari data invalid, trying satellite API with best model`);
-        const bestModelResult = await this.fetchFromSatelliteAPI({
-          latitude,
-          longitude,
-          date,
-          timezone,
-          models: 'best_match',
-          includePastDays: 2
-        });
+      const data = await response.json() as SatelliteAPIResponse;
 
-        if (bestModelResult.success && this.hasValidDaytimeData(bestModelResult.data)) {
-          console.log('[SolarRadiation] Satellite API with best model returned valid data');
-          return {
-            ...bestModelResult,
-            source: 'satellite_best'
-          };
-        }
+      // Check if we have Tier 1 (observational satellite) data
+      const hasTier1Data = this.hasValidTier1Data(data, date);
 
-        // Tier 1c: Fallback to archive API for current day
-        console.log(`[SolarRadiation] Satellite APIs failed, falling back to archive API for current day`);
-        const archiveResult = await this.fetchFromArchiveAPI({
-          latitude,
-          longitude,
-          date,
-          timezone,
-          models: undefined,
-          includePastDays: 0
-        });
-
+      if (hasTier1Data) {
+        console.log('[SolarRadiation] Using Tier 1 (satellite_radiation_seamless) observational data');
         return {
-          ...archiveResult,
-          source: 'archive_current'
-        };
-
-      } else {
-        // Tier 2: Historical days - use archive API directly
-        console.log(`[SolarRadiation] Historical date detected (${date}), using archive API`);
-        const historicalResult = await this.fetchFromArchiveAPI({
-          latitude,
-          longitude,
-          date,
-          timezone,
-          models: undefined,
-          includePastDays: 0
-        });
-
-        return {
-          ...historicalResult,
-          source: 'archive_historical'
+          success: true,
+          data: this.extractTier1Data(data, date),
+          source: 'satellite_seamless'
         };
       }
+
+      // Check if we have Tier 2 (archive best match) data
+      const hasTier2Data = this.hasValidTier2Data(data, date);
+
+      if (hasTier2Data) {
+        console.log('[SolarRadiation] Tier 1 unavailable, using Tier 2 (archive_best_match) model data');
+        return {
+          success: true,
+          data: this.extractTier2Data(data, date),
+          source: 'satellite_model'
+        };
+      }
+
+      // No valid data from either tier
+      console.warn('[SolarRadiation] No valid solar radiation data available from satellite API');
+      return {
+        success: false,
+        error: 'No solar radiation data available for this date'
+      };
 
     } catch (error) {
       console.error('[SolarRadiation] Error fetching solar radiation:', error);
@@ -146,172 +120,93 @@ export class SolarRadiationService {
   }
 
   /**
-   * Fetch from Archive API with configurable models
+   * Check if Tier 1 (satellite_radiation_seamless) has valid data for the target date
    */
-  private static async fetchFromArchiveAPI(options: {
-    latitude: number;
-    longitude: number;
-    date: string;
-    timezone: string;
-    models?: string;
-    includePastDays?: number;
-  }): Promise<SolarRadiationResult> {
-    const { latitude, longitude, date, timezone, models, includePastDays } = options;
+  private static hasValidTier1Data(data: SatelliteAPIResponse, targetDate: string): boolean {
+    const times = data.hourly?.time || [];
+    const radiation = data.hourly?.shortwave_radiation_instant_satellite_radiation_seamless || [];
 
-    // Calculate date range
-    let startDate = date;
-    let endDate = date;
+    // Find indices for the target date
+    const targetIndices = times
+      .map((t, i) => t.startsWith(targetDate) ? i : -1)
+      .filter(i => i >= 0);
 
-    if (includePastDays) {
-      const pastDate = new Date(date);
-      pastDate.setDate(pastDate.getDate() - includePastDays);
-      startDate = pastDate.toISOString().split('T')[0];
-    }
+    if (targetIndices.length === 0) return false;
 
-    const url = new URL(this.ARCHIVE_API_BASE);
-    url.searchParams.set('latitude', latitude.toString());
-    url.searchParams.set('longitude', longitude.toString());
-    url.searchParams.set('start_date', startDate);
-    url.searchParams.set('end_date', endDate);
-    url.searchParams.set('hourly', 'shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant');
-    url.searchParams.set('timezone', timezone);
-
-    // Add models parameter if specified
-    if (models) {
-      url.searchParams.set('models', models);
-    }
-
-    console.log(`[SolarRadiation] Fetching from Archive API with models ${models || 'default'}: ${url.toString()}`);
-
-    try {
-      const response = await fetch(url.toString());
-      if (!response.ok) {
-        throw new Error(`Archive API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json() as WeatherData;
-
-      return {
-        success: true,
-        data: {
-          shortwave_radiation_instant: data.hourly?.shortwave_radiation_instant || [],
-          direct_radiation_instant: data.hourly?.direct_radiation_instant || [],
-          diffuse_radiation_instant: data.hourly?.diffuse_radiation_instant || [],
-          time: data.hourly?.time || []
-        }
-      };
-    } catch (error) {
-      console.error('[SolarRadiation] Archive API fetch failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Archive API fetch failed'
-      };
-    }
+    // Check if we have non-null radiation values for the target date
+    return targetIndices.some(i => radiation[i] !== null && radiation[i] !== undefined);
   }
 
   /**
-   * Fetch from Satellite API with configurable models
+   * Check if Tier 2 (archive_best_match) has valid data for the target date
    */
-  private static async fetchFromSatelliteAPI(options: {
-    latitude: number;
-    longitude: number;
-    date: string;
-    timezone: string;
-    models: string;
-    includePastDays?: number;
-  }): Promise<SolarRadiationResult> {
-    const { latitude, longitude, date, timezone, models, includePastDays } = options;
+  private static hasValidTier2Data(data: SatelliteAPIResponse, targetDate: string): boolean {
+    const times = data.hourly?.time || [];
+    const radiation = data.hourly?.shortwave_radiation_instant_archive_best_match || [];
 
-    // Calculate date range
-    let startDate = date;
-    let endDate = date;
+    // Find indices for the target date
+    const targetIndices = times
+      .map((t, i) => t.startsWith(targetDate) ? i : -1)
+      .filter(i => i >= 0);
 
-    if (includePastDays) {
-      const pastDate = new Date(date);
-      pastDate.setDate(pastDate.getDate() - includePastDays);
-      startDate = pastDate.toISOString().split('T')[0];
-    }
+    if (targetIndices.length === 0) return false;
 
-    const url = new URL(this.SATELLITE_API_BASE);
-    url.searchParams.set('latitude', latitude.toString());
-    url.searchParams.set('longitude', longitude.toString());
-    url.searchParams.set('start_date', startDate);
-    url.searchParams.set('end_date', endDate);
-    url.searchParams.set('hourly', 'shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant');
-    url.searchParams.set('timezone', timezone);
-    url.searchParams.set('models', models);
-
-    console.log(`[SolarRadiation] Fetching from Satellite API with models ${models}: ${url.toString()}`);
-
-    try {
-      const response = await fetch(url.toString());
-      if (!response.ok) {
-        throw new Error(`Satellite API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json() as WeatherData;
-
-      return {
-        success: true,
-        data: {
-          shortwave_radiation_instant: data.hourly?.shortwave_radiation_instant || [],
-          direct_radiation_instant: data.hourly?.direct_radiation_instant || [],
-          diffuse_radiation_instant: data.hourly?.diffuse_radiation_instant || [],
-          time: data.hourly?.time || []
-        }
-      };
-    } catch (error) {
-      console.error('[SolarRadiation] Satellite API fetch failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Satellite API fetch failed'
-      };
-    }
+    // Check if we have non-null radiation values for the target date
+    return targetIndices.some(i => radiation[i] !== null && radiation[i] !== undefined);
   }
 
   /**
-   * Check if the data contains valid daytime radiation values
-   * Himawari data is considered valid if it shows non-zero values during typical daylight hours
-   *
-   * IMPORTANT: In early morning hours (before 6 AM), we may not have daytime data yet.
-   * In this case, we should accept the data if it has valid structure, even if no daytime
-   * radiation is present yet. This prevents early morning failures.
+   * Extract Tier 1 (satellite_radiation_seamless) data for the target date
    */
-  private static hasValidDaytimeData(data?: {
-    shortwave_radiation_instant?: number[];
-    direct_radiation_instant?: number[];
-    diffuse_radiation_instant?: number[];
-    time?: string[];
-  }): boolean {
-    if (!data || !data.time || !data.shortwave_radiation_instant) {
-      return false;
-    }
+  private static extractTier1Data(data: SatelliteAPIResponse, targetDate: string): {
+    shortwave_radiation_instant: number[];
+    direct_radiation_instant: number[];
+    diffuse_radiation_instant: number[];
+    time: string[];
+  } {
+    const times = data.hourly?.time || [];
+    const shortwave = data.hourly?.shortwave_radiation_instant_satellite_radiation_seamless || [];
+    const direct = data.hourly?.direct_radiation_instant_satellite_radiation_seamless || [];
+    const diffuse = data.hourly?.diffuse_radiation_instant_satellite_radiation_seamless || [];
 
-    // Check if we have ANY valid data structure
-    if (data.time.length === 0 || data.shortwave_radiation_instant.length === 0) {
-      return false;
-    }
+    // Filter for target date
+    const targetIndices = times
+      .map((t, i) => t.startsWith(targetDate) ? i : -1)
+      .filter(i => i >= 0);
 
-    // Find the latest hour in the dataset
-    const latestHour = Math.max(...data.time.map(timeStr => new Date(timeStr).getHours()));
+    return {
+      time: targetIndices.map(i => times[i]),
+      shortwave_radiation_instant: targetIndices.map(i => shortwave[i] ?? 0),
+      direct_radiation_instant: targetIndices.map(i => direct[i] ?? 0),
+      diffuse_radiation_instant: targetIndices.map(i => diffuse[i] ?? 0)
+    };
+  }
 
-    // If the latest hour is before 6 AM (early morning), accept the data as valid
-    // because daylight data won't exist yet
-    if (latestHour < 6) {
-      console.log(`[SolarRadiation] Early morning detected (latest hour: ${latestHour}), accepting data as valid`);
-      return true;
-    }
+  /**
+   * Extract Tier 2 (archive_best_match) data for the target date
+   */
+  private static extractTier2Data(data: SatelliteAPIResponse, targetDate: string): {
+    shortwave_radiation_instant: number[];
+    direct_radiation_instant: number[];
+    diffuse_radiation_instant: number[];
+    time: string[];
+  } {
+    const times = data.hourly?.time || [];
+    const shortwave = data.hourly?.shortwave_radiation_instant_archive_best_match || [];
+    const direct = data.hourly?.direct_radiation_instant_archive_best_match || [];
+    const diffuse = data.hourly?.diffuse_radiation_instant_archive_best_match || [];
 
-    // Check for non-zero radiation values during daylight hours (6 AM - 6 PM)
-    const hasDaytimeRadiation = data.time.some((timeStr, index) => {
-      const hour = new Date(timeStr).getHours();
-      const radiation = data.shortwave_radiation_instant?.[index] || 0;
+    // Filter for target date
+    const targetIndices = times
+      .map((t, i) => t.startsWith(targetDate) ? i : -1)
+      .filter(i => i >= 0);
 
-      // During daylight hours (6 AM - 6 PM), we should see some radiation
-      return hour >= 6 && hour <= 18 && radiation > 0;
-    });
-
-    return hasDaytimeRadiation;
+    return {
+      time: targetIndices.map(i => times[i]),
+      shortwave_radiation_instant: targetIndices.map(i => shortwave[i] ?? 0),
+      direct_radiation_instant: targetIndices.map(i => direct[i] ?? 0),
+      diffuse_radiation_instant: targetIndices.map(i => diffuse[i] ?? 0)
+    };
   }
 
   /**

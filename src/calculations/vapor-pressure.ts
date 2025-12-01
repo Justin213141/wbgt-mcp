@@ -36,3 +36,22 @@ export function calculateVaporPressureDerivative(T: number): number {
   // d(esat)/dT = esat * a * b / (b + T)^2 in Pa/K
   return esat * a * b / Math.pow(b + T, 2);  // esat is in Pa, result in Pa/K
 }
+
+/**
+ * Calculate dew point temperature using Magnus formula
+ * @param T Air temperature in Celsius
+ * @param RH Relative humidity in percent (0-100)
+ * @returns Dew point temperature in Celsius
+ */
+export function calculateDewPointFromRH(T: number, RH: number): number {
+  const a = 17.27;
+  const b = 237.7;
+
+  // Calculate alpha term
+  const alpha = (a * T) / (b + T) + Math.log(RH / 100);
+
+  // Calculate dew point
+  const dewPoint = (b * alpha) / (a - alpha);
+
+  return dewPoint;
+}
