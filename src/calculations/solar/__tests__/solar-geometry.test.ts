@@ -1,31 +1,102 @@
 /**
  * Tests for Solar Geometry Calculations
- * Tests branch coverage for timezone-specific solar zenith angle calculations
+ * Full NOAA Solar Calculator implementation tests
+ * Reference: https://gml.noaa.gov/grad/solcalc/calcdetails.html
  */
 
 import { describe, it, expect } from 'vitest';
 import {
   calculateSolarZenithAngleByTimezone,
   calculateSolarZenithAngle,
-  calculateSolarZenithAngleJST
+  calculateSolarZenithAngleJST,
+  calculateSolarZenithAngleNOAA,
+  calculateJulianDate
 } from '../solar-geometry';
 
 describe('Solar Geometry Calculations', () => {
+  describe('NOAA Reference Values - Sydney December 8, 2025', () => {
+    // Test cases from SOLAR_ZENITH_DOCUMENTATION.md with NOAA reference values
+    // Sydney coordinates: -33.8688°, 151.2093°
+    const SYDNEY_LAT = -33.8688;
+    const SYDNEY_LON = 151.2093;
+
+    it('should match NOAA reference for Dec 8, 1:00 PM AEDT (11.50°)', () => {
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-12-08T13:00', 11);
+      expect(result).toBeCloseTo(11.50, 1);
+    });
+
+    it('should match NOAA reference for Dec 8, 6:00 AM AEDT (86.59°)', () => {
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-12-08T06:00', 11);
+      expect(result).toBeCloseTo(86.59, 1);
+    });
+
+    it('should match NOAA reference for Dec 8, 12:00 PM AEDT (15.18°)', () => {
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-12-08T12:00', 11);
+      expect(result).toBeCloseTo(15.18, 1);
+    });
+
+    it('should calculate reasonable zenith for Dec 8, 6:00 PM AEDT (late afternoon)', () => {
+      // At 6 PM in Sydney summer (sunset ~8 PM), sun should be at moderate zenith
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-12-08T18:00', 11);
+      // Sun is still ~2 hours before sunset, so zenith should be 60-80°
+      expect(result).toBeGreaterThan(60);
+      expect(result).toBeLessThan(80);
+    });
+
+    it('should match NOAA reference for Jun 8, 12:00 PM AEST (56.74°)', () => {
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-06-08T12:00', 10);
+      expect(result).toBeCloseTo(56.74, 0); // ±0.5° tolerance
+    });
+
+    it('should match NOAA reference for Jun 8, 3:00 PM AEST (72.05°)', () => {
+      const result = calculateSolarZenithAngleNOAA(SYDNEY_LAT, SYDNEY_LON, '2025-06-08T15:00', 10);
+      expect(result).toBeCloseTo(72.05, 0); // ±0.5° tolerance
+    });
+  });
+
+  describe('calculateJulianDate', () => {
+    it('should calculate Julian Date correctly for J2000.0', () => {
+      // J2000.0 is January 1, 2000, 12:00 TT = JD 2451545.0
+      const jd = calculateJulianDate(2000, 1, 1, 12, 0, 0);
+      expect(jd).toBeCloseTo(2451545.0, 3);
+    });
+
+    it('should handle leap year dates', () => {
+      // Feb 29, 2024 at noon
+      const jd = calculateJulianDate(2024, 2, 29, 12, 0, 0);
+      expect(jd).toBeGreaterThan(2460000);
+    });
+  });
+
   describe('calculateSolarZenithAngleByTimezone', () => {
-    it('should route to Sydney calculation for UTC+10 with DST', () => {
+    it('should calculate correctly for Sydney with automatic DST detection', () => {
+      // December is AEDT (UTC+11) in Sydney
       const result = calculateSolarZenithAngleByTimezone(
-        -33.8018,
-        151.1254,
-        '2023-06-21T12:00',
+        -33.8688,
+        151.2093,
+        '2025-12-08T13:00',
         10,
         true
       );
 
-      expect(result).toBeGreaterThan(0);
-      expect(result).toBeLessThan(180);
+      // Should match NOAA reference
+      expect(result).toBeCloseTo(11.50, 1);
     });
 
-    it('should route to JST calculation for UTC+9 without DST', () => {
+    it('should handle winter (non-DST) correctly for Sydney', () => {
+      // June is AEST (UTC+10) in Sydney
+      const result = calculateSolarZenithAngleByTimezone(
+        -33.8688,
+        151.2093,
+        '2025-06-08T12:00',
+        10,
+        true
+      );
+
+      expect(result).toBeCloseTo(56.74, 1);
+    });
+
+    it('should handle JST (no DST) correctly', () => {
       const result = calculateSolarZenithAngleByTimezone(
         35.6762,
         139.6503,
@@ -38,40 +109,18 @@ describe('Solar Geometry Calculations', () => {
       expect(result).toBeLessThan(180);
     });
 
-    it('should throw error for unsupported timezone (UTC+8 with DST)', () => {
-      expect(() => {
-        calculateSolarZenithAngleByTimezone(
-          1.3521,
-          103.8198,
-          '2023-06-21T12:00',
-          8,
-          true
-        );
-      }).toThrow('Unsupported timezone');
-    });
+    it('should use fixed offset for non-DST timezones', () => {
+      // UTC+8 Singapore (no DST)
+      const result = calculateSolarZenithAngleByTimezone(
+        1.3521,
+        103.8198,
+        '2023-06-21T12:00',
+        8,
+        false
+      );
 
-    it('should throw error for unsupported timezone (UTC+10 without DST)', () => {
-      expect(() => {
-        calculateSolarZenithAngleByTimezone(
-          -33.8018,
-          151.1254,
-          '2023-06-21T12:00',
-          10,
-          false
-        );
-      }).toThrow('Unsupported timezone');
-    });
-
-    it('should throw error for unsupported timezone (UTC+9 with DST)', () => {
-      expect(() => {
-        calculateSolarZenithAngleByTimezone(
-          35.6762,
-          139.6503,
-          '2023-06-21T12:00',
-          9,
-          true
-        );
-      }).toThrow('Unsupported timezone');
+      expect(result).toBeGreaterThan(0);
+      expect(result).toBeLessThan(180);
     });
   });
 
