@@ -167,8 +167,8 @@ const WICK_LENGTH = 0.0254;  // m
 const WICK_EMISSIVITY = 0.95;
 const WICK_ALBEDO = 0.4;
 
-// Surface constants
-const SURFACE_ALBEDO = 0.45;
+// Surface constants (grass 0.15-0.26, asphalt 0.05-0.18, concrete 0.20-0.40)
+const SURFACE_ALBEDO = 0.20;
 
 
 // --- Helper functions for data parsing ---

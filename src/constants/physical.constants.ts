@@ -100,8 +100,10 @@ export const WICK_SURFACE_AREA = Math.PI * WICK_DIAMETER * WICK_LENGTH;
 /**
  * Surface/ground albedo (dimensionless)
  * Default solar reflectance of ground surface
+ * Typical values: grass 0.15-0.26, asphalt 0.05-0.18, concrete 0.20-0.40
+ * Use 0.20 for mixed outdoor surfaces (conservative for heat stress)
  */
-export const SURFACE_ALBEDO = 0.45;
+export const SURFACE_ALBEDO = 0.20;
 
 // === Air Properties Constants ===
 

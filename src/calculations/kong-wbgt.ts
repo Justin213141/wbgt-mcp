@@ -53,7 +53,21 @@ export function validateInputs(
 }
 
 /**
- * Calculate Kong black globe temperature with numerical stability protection
+ * Calculate Kong black globe temperature using Newton-Raphson iteration
+ *
+ * Heat balance equation at equilibrium:
+ *   SR_globe = σε(Tg⁴ - Ta⁴) + h(Tg - Ta)
+ *
+ * The linearized approximation (T_g = T_a + netRad/(h_c + h_r)) produces
+ * excessive globe temperatures because it doesn't properly account for
+ * the T⁴ radiative cooling term. Newton-Raphson iteration converges to
+ * the correct equilibrium temperature.
+ *
+ * @param Ta - Air temperature (°C)
+ * @param SRg - Absorbed shortwave radiation on globe (W/m²)
+ * @param LRg - Longwave radiation (unused in Newton-Raphson, kept for API compatibility)
+ * @param h_cg - Convective heat transfer coefficient (W/m²·K)
+ * @param h_rg - Radiative heat transfer coefficient (unused, kept for API compatibility)
  */
 export function calculateKongBlackGlobe(
   Ta: number,
@@ -62,17 +76,38 @@ export function calculateKongBlackGlobe(
   h_cg: number,
   h_rg: number
 ): number {
-  const Ta_K = Ta + 273.15;
+  // Handle no solar radiation (nighttime)
+  if (SRg <= 0) {
+    return Ta + 0.5; // Slight elevation due to longwave
+  }
 
-  // Numerator: shortwave + longwave radiation
-  const numerator = SRg + LRg - STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * Math.pow(Ta_K, 4);
+  const TaK = Ta + 273.15;
+  const h = Math.max(h_cg, MIN_HEAT_TRANSFER_COEFFICIENT);
 
-  // Denominator: total heat transfer coefficient with physics-based floor
-  // Minimum ~5 W/(m²·K) corresponds to radiative transfer alone (hr ≈ 5)
-  const denominator = Math.max(h_cg + h_rg, MIN_HEAT_TRANSFER_COEFFICIENT);
+  // Newton-Raphson iteration for globe temperature
+  // Heat balance: SR_globe - σε(Tg⁴ - Ta⁴) - h(Tg - Ta) = 0
+  let TgK = TaK + SRg / h; // Initial guess
 
-  const T_g_K = Ta_K + numerator / denominator;
-  return T_g_K - 273.15;
+  for (let i = 0; i < 10; i++) {
+    // Heat balance residual (should be 0 at equilibrium)
+    const radiation = STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * (Math.pow(TgK, 4) - Math.pow(TaK, 4));
+    const convection = h * (TgK - TaK);
+    const balance = SRg - radiation - convection;
+
+    // Derivative of balance w.r.t. TgK
+    const dBalance = -4 * STEFAN_BOLTZMANN * GLOBE_EMISSIVITY * Math.pow(TgK, 3) - h;
+
+    // Newton-Raphson update
+    const TgK_new = TgK - balance / dBalance;
+
+    // Check convergence
+    if (Math.abs(TgK_new - TgK) < 0.01) {
+      break;
+    }
+    TgK = TgK_new;
+  }
+
+  return TgK - 273.15;
 }
 
 /**
